@@ -19,12 +19,10 @@ BEGIN
 	This routine works only for 1 file and one property at a time.
 	*/
 	SELECT UPPER(resort),source_id,CAST(business_date AS character varying) INTO propertyCode,sourceId,partitionValue FROM  stage.stage_opera WHERE (etl_batch_id = etlBatchId OR etlBatchId IS NULL);
+	-- Create partition for business date if needed.
 	PERFORM warehouse.f_create_table_partition('warehouse.reservation_stay_date_f',partitionValue);
 	PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_f',partitionValue);
 	PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_extension_f',partitionValue);
-	-- Create partition for business date if needed.
-	DELETE FROM warehouse.reservation_stay_date_f;
-	DELETE FROM warehouse.reservation_business_date_f;
 	INSERT INTO warehouse.reservation_stay_date_f
 	(
         source_id,
@@ -131,7 +129,7 @@ BEGIN
         etl_file_name,
         etl_ingest_datetime
     )
-    SELECT
+    SELECT DISTINCT
 		sourceId,
 		lookup.f_lookup_reservation(s.reservation_id,sourceId),
 		lookup.f_lookup_property(propertyCode,sourceId),
@@ -169,6 +167,81 @@ BEGIN
         stage.stage_opera s
     WHERE
 		s.etl_batch_id = etlBatchId;
+    DELETE FROM
+        stage.stage_opera_distinct
+    WHERE
+        etl_batch_id = etlBatchId;
+
+    INSERT INTO stage.stage_opera_distinct
+    (
+        etl_batch_id,
+        source_id,
+        reservation_id,
+        business_date,
+        vip_status,
+        guest_city,
+        guest_country,
+        guest_nationality,
+        membership_id,
+        membership_type,
+        membership_level,
+        membership_class,
+        travel_agent_id,
+        travel_agent_name,
+        travel_agent_address_line_1,
+        travel_agent_city,
+        travel_agent_state,
+        travel_agent_country,
+        travel_agent_postal_code,
+        company_id,
+        company_name,
+        company_address_line_1,
+        company_city,
+        company_state,
+        company_country,
+        company_postal_code,
+        allotment_header_id,
+        resv_name_id,
+        etl_file_name    
+    )
+	SELECT DISTINCT
+	    etl_batch_id,
+		source_id,
+		reservation_id,
+        business_date,
+        vip_status,
+        guest_city,
+        guest_country,
+        guest_nationality,
+        membership_id,
+        membership_type,
+        membership_level,
+        membership_class,
+        travel_agent_id,
+        travel_agent_name,
+        travel_agent_address_line_1,
+        travel_agent_city,
+        travel_agent_state,
+        travel_agent_country,
+        travel_agent_postal_code,
+        company_id,
+        company_name,
+        company_address_line_1,
+        company_city,
+        company_state,
+        company_country,
+        company_postal_code,
+        allotment_header_id,
+        resv_name_id,
+        s.etl_file_name
+    FROM
+        stage.stage_opera s
+    WHERE
+		s.etl_batch_id = etlBatchId;
+
+
+
+
 
     INSERT INTO warehouse.reservation_business_date_extension_f
     (
@@ -181,10 +254,10 @@ BEGIN
     etl_ingest_datetime
 	)
 	SELECT
-		sourceId,
-		lookup.f_lookup_reservation(s.reservation_id,sourceId),
-		lookup.f_lookup_property(propertyCode,sourceId),
-        business_date,
+		s.source_id,
+		lookup.f_lookup_reservation(s.reservation_id,s.source_id),
+		lookup.f_lookup_property(propertyCode,s.source_id),
+        s.business_date,
         (
           SELECT row_to_json(d)
           FROM (
@@ -213,23 +286,34 @@ BEGIN
                 ,company_postal_code
                 ,allotment_header_id
                 ,resv_name_id
-            FROM stage.stage_opera d
-            WHERE d.stage_id=s.stage_id
+            FROM stage.stage_opera_distinct d
+            WHERE d.reservation_id=s.reservation_id AND d.etl_batch_id = s.etl_batch_id
           ) d
         ),
         s.etl_file_name,
         current_timestamp
     FROM
-        stage.stage_opera s
+        stage.stage_opera_distinct s
     WHERE
 		s.etl_batch_id = etlBatchId;
+
+    DELETE FROM
+        stage.stage_opera_distinct
+    WHERE
+        etl_batch_id = etlBatchId;
+
+
+    DELETE FROM
+        stage.stage_opera
+    WHERE
+        etl_batch_id = etlBatchId;
 
 
     return rowCount;
 END;
 $BODY$;
 
---select * from lookup.f_process_stage_opera('t19ac8ed5b4a04ec7812d85db763bd072');
+--select * from lookup.f_process_stage_opera('tc17ffa42dd584828abf25bfbe5f740e2');
 
 --select * from warehouse.reservation_business_date_extension_f;
 

@@ -1,16 +1,8 @@
-package com.mydata.impl.lambda;
+package com.mydata;
 
-import com.amazonaws.services.lambda.runtime.Context;
-import com.amazonaws.services.lambda.runtime.RequestHandler;
-import com.amazonaws.services.lambda.runtime.events.S3Event;
 import com.mydata.entity.GlobalConstant;
-import com.mydata.entity.S3HelperResponse;
 import com.mydata.entity.SourceFieldParameter;
 import com.mydata.entity.domain.IngestSourceDetail;
-import com.mydata.helper.DBConnection;
-import com.mydata.helper.IS3Helper;
-import com.mydata.helper.S3HelperV2;
-import com.mydata.impl.IngestionWorker;
 import com.opencsv.CSVParser;
 import com.opencsv.CSVParserBuilder;
 import com.opencsv.CSVReader;
@@ -27,47 +19,45 @@ import java.sql.*;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.stream.Collectors;
 
-public class processS3Event implements RequestHandler<S3Event, Object> {
-
+public class App {
     static Connection dbConnection;
 
-    public processS3Event() {
+
+    static void establishDBConnection() {
         if (dbConnection == null) {
             try {
-                HashMap<GlobalConstant.DB_CONNECTION_KEY, String> connectionDetail = DBConnection.getConnectionDetail();
-                dbConnection = DriverManager.getConnection(connectionDetail.get(GlobalConstant.DB_CONNECTION_KEY.DB_CONNECTION_STRING), connectionDetail.get(GlobalConstant.DB_CONNECTION_KEY.DB_UID), connectionDetail.get(GlobalConstant.DB_CONNECTION_KEY.DB_PWD));
+                String secretURL = String.format("jdbc:postgresql://%s:%d/%s", "mydata-poc-defvpc.cgzrqpakxtee.us-east-1.rds.amazonaws.com", 5432, "mydata");
+                dbConnection = DriverManager.getConnection(secretURL, "postgres", "Memphis0101!");
             } catch (Exception e) {
                 e.printStackTrace();
             }
         }
     }
 
-    public Object handleRequest(S3Event s3Event, Context context) {
+    public static void main(String[] args) {
+        System.out.println("HW");
         try {
-            //SecretsUtil.secretValueWrapper("mydata-postgres-rds-sm");
-            String s3Bucket = s3Event.getRecords().get(0).getS3().getBucket().getName();
-            String s3Key = s3Event.getRecords().get(0).getS3().getObject().getKey();
-            System.out.println(String.format("Bucket: %s. Key: %s", s3Bucket, s3Key));
-            IngestSourceDetail ingestSourceDetail = new IngestSourceDetail(s3Key, s3Bucket);
-            refreshSourceDefinition(ingestSourceDetail);
+            String sourceFormat = "CSV";
+            establishDBConnection();
+            IngestSourceDetail ingestSourceDetail = refreshSourceDefinition("ONQ_PMSLEDGER");
             List<SourceFieldParameter> paramList = readStageTableDef(ingestSourceDetail);
             String paramQueryString = getParamQueryStringBySource(paramList.size());
-
+            String etlBatchId = "t" + UUID.randomUUID().toString().replace("-", "");
+            //String fileFullName = "/Users/chachads/Downloads/GLAPX_20211018_OTB.csv";
+            String fileFullName = "/Users/chachads/Downloads/LEDGER_Highgate_Hotels_20211214_20211215_1230.json";
+            File file = new File(fileFullName);
+            String etlFileName = (file.exists()) ? file.getName() : "notfound";
+            String stageTableName = ingestSourceDetail.getStageTableName();
+            ingestSourceDetail.setLocalFilePath(fileFullName);
             Long rowCount = 0L;
             Integer batchSize = 1000;
+            PreparedStatement preparedStatement = dbConnection.prepareStatement(String.format("INSERT INTO %s values (%s)", stageTableName, paramQueryString));
 
-            PreparedStatement preparedStatement = dbConnection.prepareStatement(String.format("INSERT INTO %s values (%s)", ingestSourceDetail.getStageTableName(), paramQueryString));
-
-            IS3Helper s3 = new S3HelperV2(ingestSourceDetail.getS3HelperRequest());
-            S3HelperResponse s3HelperResponse = s3.saveFileLocally();
-            String etlBatchId = "t" + UUID.randomUUID().toString().replace("-", "");
-            File localFile = new File(s3HelperResponse.getLocalFilePath());
-            String etlFileName = localFile.exists() ? localFile.getName() : "error";
-            System.out.println(String.format("ETL FILE NAME IS %s", etlFileName));
-            switch (ingestSourceDetail.getSourceFormat()) {
+            switch (ingestSourceDetail.getSourceFormat()){
                 case "CSV":
-                    BufferedReader reader = new BufferedReader(new FileReader(s3HelperResponse.getLocalFilePath()));
+                    BufferedReader reader = new BufferedReader(new FileReader(ingestSourceDetail.getLocalFilePath()));
                     CSVParser parser = new CSVParserBuilder().withSeparator(',').withIgnoreQuotations(true).build();
                     CSVReader csvReader = new CSVReaderBuilder(reader).withSkipLines(1).withCSVParser(parser).build();
                     String[] line;
@@ -77,7 +67,7 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
                         openBatch = true;
                         createPreparedStatement(preparedStatement, ingestSourceDetail.getSourceFormat(), line, paramList, etlBatchId, etlFileName, ingestSourceDetail.getDbSourceId());
                         preparedStatement.addBatch();
-                        if (rowCount % batchSize == 0) {
+                        if (rowCount % batchSize == 0 ) {
                             System.out.println(String.format("COMMITTING BATCH. Row Count: %d", rowCount));
                             int[] rowsInserted = preparedStatement.executeBatch();
                             System.out.println(String.format("COMMITTING BATCH. Row Count: %d. Execute Status: %d", rowCount, rowsInserted.length));
@@ -88,121 +78,34 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
                         int[] rowsInserted = preparedStatement.executeBatch();
                         System.out.println(String.format("COMMITTING BATCH. Row Count: %d. Execute Status: %d", rowCount, rowsInserted.length));
                     }
-                    System.out.println("MOVING TO STAGE");
-                    PreparedStatement moveToStage = dbConnection.prepareStatement(String.format("select * from lookup.f_process_stage_opera('%s');", etlBatchId));
-                    System.out.print(moveToStage.toString());
-                    moveToStage.execute();
-                    System.out.println("closing readers");
-                    reader.close();
-                    csvReader.close();
-                    System.out.println("closing connection");
-                    dbConnection.close();
                     break;
                 case "JSON":
+                    List<SourceFieldParameter> sourceFieldParameterList = GlobalConstant.sourceFieldParameterList.stream().
+                            filter(p -> p.getSourceKey().equals(ingestSourceDetail.getESourceKey())).
+                            sorted(Comparator.comparing(SourceFieldParameter::getParameterOrder)).
+                            collect(Collectors.toList());
+
                     JSONParser jsonParser = new JSONParser();
-                    JSONArray jarray = (JSONArray) jsonParser.parse(new FileReader(s3HelperResponse.getLocalFilePath()));
-                    System.out.println(String.format("JSON ARRAY PARSED FROM %s with size %d", s3HelperResponse.getLocalFilePath(),jarray.size()));
+                    JSONArray jarray = (JSONArray) jsonParser.parse(new FileReader(ingestSourceDetail.getLocalFilePath()));
                     for (Object object : jarray) {
                         rowCount++;
                         createPreparedStatement(preparedStatement, ingestSourceDetail.getSourceFormat(), object, paramList, etlBatchId, etlFileName, ingestSourceDetail.getDbSourceId());
-                        System.out.println(String.format("Prepared statement is %s", preparedStatement.toString()));
+
                         preparedStatement.addBatch();
                         if (rowCount % batchSize == 0 || rowCount == jarray.size()) {
                             System.out.println(String.format("COMMITTING BATCH. Row Count: %d", rowCount));
                             int[] rowsInserted = preparedStatement.executeBatch();
                             System.out.println(String.format("COMMITTING BATCH. Row Count: %d. Execute Status: %d", rowCount, rowsInserted.length));
                         }
+                        ingestSourceDetail.getFileTrackerDetail().setInsertRowCount(rowCount);
                     }
+
                     System.out.println("finished parsing");
                     break;
             }
-//////            ingestSourceDetail.getFileTrackerDetail().setInsertRowCount(rowCount);
-            System.out.println(ingestSourceDetail.toString());
-            IngestionWorker worker = new IngestionWorker(ingestSourceDetail);
-            // commented out for now.
-            //worker.doWork();
-/*
-        IS3Helper s3 = new S3HelperV2(ingestSourceDetail.getS3HelperRequest());
-        System.out.println("CALLING SAVE FILE LOCALLY");
-        s3.saveFileLocally();
-        InputStream streamToLoad = s3.readObject().getObjectStream();
-        System.out.println("END - READING INPUT STREAM");
-        System.out.println("START - WRITING STREAM TO DB");
-
-        ingestSourceDetail.getDbHelper().loadStream(ingestSourceDetail, streamToLoad);*/
-            System.out.println("END - WRITING STREAM TO DB");
         } catch (Exception e) {
             e.printStackTrace();
         }
-        return null;
-    }
-
-
-    public static void refreshSourceDefinition(IngestSourceDetail ingestSourceDetail) throws SQLException {
-        System.out.printf("INSIDE GET SOURCE DETAIL");
-        final String sourceDefintionSelectSQL = "SELECT * from lookup.f_lookup_source('%s')";
-        PreparedStatement sourceSelection = dbConnection.prepareStatement(String.format(sourceDefintionSelectSQL, ingestSourceDetail.getSourceKey()));
-        ResultSet rs = sourceSelection.executeQuery();
-        // this should return 1 row.
-        if (rs.next()) {
-            ingestSourceDetail.setTempTableDefinition(rs.getString("temp_table_definition"));
-            ingestSourceDetail.setStageTableName(rs.getString("stage_" +
-                    "table_name"));
-            ingestSourceDetail.setSourceFormat(rs.getString("source_format"));
-            ingestSourceDetail.setDbSourceId(rs.getInt("internal_source_id"));
-            ingestSourceDetail.setSourceDateFormat(rs.getString("source_date_format"));
-        }
-        System.out.printf(ingestSourceDetail.toString());
-    }
-
-    protected static List<SourceFieldParameter> readStageTableDef(IngestSourceDetail ingestSourceDetail) throws SQLException {
-        String[] stageTableNameList = ingestSourceDetail.getStageTableName().split("\\.");
-        String stageTableName= stageTableNameList[stageTableNameList.length-1];
-        PreparedStatement ps = dbConnection.prepareStatement(String.format("select column_name,data_type,ordinal_position,numeric_precision from information_schema.columns where table_name = '%s' order by ordinal_position;",stageTableName));
-        ResultSet rs = ps.executeQuery();
-        List<SourceFieldParameter> paramList = new ArrayList<>();
-        while (rs.next()) {
-            SourceFieldParameter p = new SourceFieldParameter();
-            p.setParameterName(rs.getString("column_name"));
-            p.setParameterOrder(rs.getInt("ordinal_position"));
-            p.setSourceKey(ingestSourceDetail.getESourceKey());
-            p.setEtlField(p.getParameterName().startsWith("etl"));
-            String paramType = rs.getString("data_type");
-            Integer numericPrecision = rs.getInt("numeric_precision");
-            switch (paramType) {
-                case "character varying":
-                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.CHARACTER_VARYING);
-                    break;
-                case "date":
-                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.DATE);
-                    p.setDateFormat(ingestSourceDetail.getSourceDateFormat());
-                    break;
-                case "timestamp without time zone":
-                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.TIMESTAMP);
-                    break;
-                case "integer":
-                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.INTEGER);
-                    break;
-                case "numeric":
-                    p.setParameterType(numericPrecision == null ? GlobalConstant.PSQL_PARAMETER_TYPE.INTEGER : GlobalConstant.PSQL_PARAMETER_TYPE.DOUBLE);
-                    break;
-                case "bigint":
-                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.BIGINT);
-                    break;
-                case "boolean":
-                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.BOOLEAN);
-            }
-            paramList.add(p);
-
-            //                    add(new SourceFieldParameter(SOURCE_KEY.ONQ_PMSLEDGER, "etl_batch_id", PSQL_PARAMETER_TYPE.CHARACTER_VARYING, null, 1, true));
-        }
-        return paramList;
-    }
-
-    protected static String getParamQueryStringBySource(Integer columnCount) {
-        String[] paramList = new String[columnCount];
-        Arrays.fill(paramList, "?");
-        return String.join(",", paramList);
     }
 
 
@@ -245,13 +148,13 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
                         }
                         break;
                     case BOOLEAN:
-                        boolean fieldBooleanValue;
+                        boolean fieldBooleanValue = false;
                         if (p.getEtlField())
                             fieldBooleanValue = false;
                         else {
                             switch (sourceFormat) {
                                 case "CSV":
-                                    fieldBooleanValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > p.getParameterOrder()) ? getSQLBoolean(lambdaCSVRecord[p.getParameterOrder() - 1]) : null;
+                                    fieldBooleanValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > Integer.valueOf(p.getParameterOrder())) ? getSQLBoolean(lambdaCSVRecord[p.getParameterOrder() - 1]) : null;
                                     preparedStatement.setBoolean(p.getParameterOrder(), fieldBooleanValue);
                                     break;
                                 case "JSON":
@@ -269,7 +172,7 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
                         else {
                             switch (sourceFormat) {
                                 case "CSV":
-                                    fieldLongValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > p.getParameterOrder()) ? Long.parseLong(lambdaCSVRecord[p.getParameterOrder() - 1]) : null;
+                                    fieldLongValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > Integer.valueOf(p.getParameterOrder())) ? Long.parseLong(lambdaCSVRecord[p.getParameterOrder() - 1]) : null;
                                     preparedStatement.setLong(p.getParameterOrder(), fieldLongValue);
                                     break;
                                 case "JSON":
@@ -280,7 +183,7 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
                         }
                         break;
                     case DOUBLE:
-                        Double fieldDoubleValue;
+                        Double fieldDoubleValue = null;
                         if (p.getEtlField())
                             fieldDoubleValue = null;
                         else {
@@ -311,7 +214,7 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
                             }
                         break;
                     case INTEGER:
-                        Integer fieldIntegerValue;
+                        Integer fieldIntegerValue = null;
                         if (p.getEtlField()) {
                             fieldIntegerValue = 1;
                             preparedStatement.setInt(p.getParameterOrder(), fieldIntegerValue);
@@ -343,7 +246,7 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
                         } else {
                             switch (sourceFormat) {
                                 case "CSV":
-                                    fieldTimeStampValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > p.getParameterOrder()) ? getSQLTimestamp(lambdaCSVRecord[p.getParameterOrder() - 1]) : null;
+                                    fieldTimeStampValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > Integer.valueOf(p.getParameterOrder())) ? getSQLTimestamp(lambdaCSVRecord[p.getParameterOrder() - 1]) : null;
                                     preparedStatement.setTimestamp(p.getParameterOrder(), fieldTimeStampValue);
                                     break;
                                 case "JSON":
@@ -355,7 +258,7 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
                         break;
                 }
 
-            } catch (SQLException e) {
+            } catch (Exception e) {
                 e.printStackTrace();
             }
         });
@@ -393,6 +296,78 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
         } catch (Exception e) {
             return null;
         }
+    }
+
+
+    protected static String getParamQueryStringBySource(Integer columnCount) {
+        String[] paramList = new String[columnCount];
+        Arrays.fill(paramList, "?");
+        return String.join(",", paramList);
+    }
+
+
+    // - final methods
+    protected static List<SourceFieldParameter> readStageTableDef(IngestSourceDetail ingestSourceDetail) throws SQLException {
+        String[] stageTableNameList = ingestSourceDetail.getStageTableName().split("\\.");
+        String stageTableName= stageTableNameList[stageTableNameList.length-1];
+        PreparedStatement ps = dbConnection.prepareStatement(String.format("select column_name,data_type,ordinal_position,numeric_precision from information_schema.columns where table_name = '%s' order by ordinal_position;",stageTableName));
+        ResultSet rs = ps.executeQuery();
+        List<SourceFieldParameter> paramList = new ArrayList<>();
+        while (rs.next()) {
+            SourceFieldParameter p = new SourceFieldParameter();
+            p.setParameterName(rs.getString("column_name"));
+            p.setParameterOrder(rs.getInt("ordinal_position"));
+            p.setSourceKey(GlobalConstant.SOURCE_KEY.OPERA);
+            p.setEtlField(p.getParameterName().startsWith("etl"));
+            String paramType = rs.getString("data_type");
+            Integer numericPrecision = rs.getInt("numeric_precision");
+            switch (paramType) {
+                case "character varying":
+                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.CHARACTER_VARYING);
+                    break;
+                case "date":
+                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.DATE);
+                    p.setDateFormat(ingestSourceDetail.getSourceDateFormat());
+                    break;
+                case "timestamp without time zone":
+                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.TIMESTAMP);
+                    break;
+                case "integer":
+                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.INTEGER);
+                    break;
+                case "numeric":
+                    p.setParameterType(numericPrecision == null ? GlobalConstant.PSQL_PARAMETER_TYPE.INTEGER : GlobalConstant.PSQL_PARAMETER_TYPE.DOUBLE);
+                    break;
+                case "bigint":
+                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.BIGINT);
+                    break;
+                case "boolean":
+                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.BOOLEAN);
+            }
+            paramList.add(p);
+
+            //                    add(new SourceFieldParameter(SOURCE_KEY.ONQ_PMSLEDGER, "etl_batch_id", PSQL_PARAMETER_TYPE.CHARACTER_VARYING, null, 1, true));
+        }
+        return paramList;
+    }
+
+    public static IngestSourceDetail refreshSourceDefinition(String sourceKey) throws SQLException {
+        IngestSourceDetail ingestSourceDetail = new IngestSourceDetail("ldz/ONQ_PMSLEDGER/abcd.csv", "mydata-poc");
+        System.out.printf("INSIDE GET SOURCE DETAIL");
+        final String sourceDefintionSelectSQL = "SELECT * from lookup.f_lookup_source('%s')";
+        PreparedStatement sourceSelection = dbConnection.prepareStatement(String.format(sourceDefintionSelectSQL, sourceKey));
+        ResultSet rs = sourceSelection.executeQuery();
+        // this should return 1 row.
+        if (rs.next()) {
+            ingestSourceDetail.setTempTableDefinition(rs.getString("temp_table_definition"));
+            ingestSourceDetail.setStageTableName(rs.getString("stage_" +
+                    "table_name"));
+            ingestSourceDetail.setSourceFormat(rs.getString("source_format"));
+            ingestSourceDetail.setDbSourceId(rs.getInt("internal_source_id"));
+            ingestSourceDetail.setSourceDateFormat(rs.getString("source_date_format"));
+        }
+        System.out.printf(ingestSourceDetail.toString());
+        return ingestSourceDetail;
     }
 
 

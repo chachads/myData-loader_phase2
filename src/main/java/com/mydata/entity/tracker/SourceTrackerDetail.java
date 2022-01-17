@@ -6,11 +6,12 @@ import java.sql.Timestamp;
 
 public class SourceTrackerDetail {
     private Long fileTrackerId;
+    private String sourceKey;
     private String rawFileName;
     private String sourceBucket;
-    private String sourceKey;
+    private String sourcePrefix;
     private String targetBucket;
-    private String targetKey;
+    private String targetPrefix;
     private String targetDBTable;
     private Long insertRowCount;
     private Timestamp processStartTime;
@@ -18,15 +19,20 @@ public class SourceTrackerDetail {
     private Timestamp processRDZWriteTime;
     private GlobalConstant.SOURCE_TYPE sourceType;
 
-    public SourceTrackerDetail(GlobalConstant.SOURCE_TYPE sourceType, String rawFileName, String sourceBucket, String sourceKey, String targetBucket, String targetKey, String targetDBTable) {
+    public SourceTrackerDetail(GlobalConstant.SOURCE_TYPE sourceType,String sourceKey,  String rawFileName, String sourceBucket, String sourcePrefix, String targetBucket, String targetPrefix, String targetDBTable) {
         this.sourceType = sourceType;
+        this.sourceKey = sourceKey;
         this.rawFileName = rawFileName;
         this.sourceBucket = sourceBucket;
-        this.sourceKey = sourceKey;
+        this.sourcePrefix = sourcePrefix;
         this.targetBucket = targetBucket;
-        this.targetKey = targetKey;
+        this.targetPrefix = targetPrefix;
         this.targetDBTable = targetDBTable;
         this.processStartTime = new Timestamp(System.currentTimeMillis());
+    }
+
+    public String getSourceKey() {
+        return sourceKey;
     }
 
     public Long getFileTrackerId() {
@@ -45,16 +51,16 @@ public class SourceTrackerDetail {
         return sourceBucket;
     }
 
-    public String getSourceKey() {
-        return sourceKey;
+    public String getSourcePrefix() {
+        return sourcePrefix;
     }
 
     public String getTargetBucket() {
         return targetBucket;
     }
 
-    public String getTargetKey() {
-        return targetKey;
+    public String getTargetPrefix() {
+        return targetPrefix;
     }
 
     public Timestamp getProcessStartTime() {

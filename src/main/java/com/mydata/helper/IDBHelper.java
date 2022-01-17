@@ -4,7 +4,6 @@ import com.mydata.entity.domain.IngestSourceDetail;
 import com.mydata.entity.tracker.SourceTrackerDetail;
 
 import java.io.InputStream;
-import java.sql.Connection;
 import java.sql.SQLException;
 
 public interface IDBHelper {
@@ -12,7 +11,7 @@ public interface IDBHelper {
 
     void refreshSourceDefinition(IngestSourceDetail ingestSourceDetail) throws SQLException;
 
-    Connection getConnection(String dbName, Boolean autoCommit) throws SQLException;
+    //Connection getConnection(String dbName, Boolean autoCommit) throws SQLException;
 
     void readAndLoadJSON(IngestSourceDetail ingestSourceDetail);
 

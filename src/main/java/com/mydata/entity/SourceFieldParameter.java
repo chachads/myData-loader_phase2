@@ -7,6 +7,42 @@ public class SourceFieldParameter {
     String precision;
     Integer parameterOrder;
     Boolean etlField;
+    String dateFormat;
+
+    public SourceFieldParameter() {
+    }
+
+    public String getDateFormat() {
+        return dateFormat;
+    }
+
+    public void setDateFormat(String dateFormat) {
+        this.dateFormat = dateFormat;
+    }
+
+    public void setSourceKey(GlobalConstant.SOURCE_KEY sourceKey) {
+        this.sourceKey = sourceKey;
+    }
+
+    public void setParameterName(String parameterName) {
+        this.parameterName = parameterName;
+    }
+
+    public void setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE parameterType) {
+        this.parameterType = parameterType;
+    }
+
+    public void setPrecision(String precision) {
+        this.precision = precision;
+    }
+
+    public void setParameterOrder(Integer parameterOrder) {
+        this.parameterOrder = parameterOrder;
+    }
+
+    public void setEtlField(Boolean etlField) {
+        this.etlField = etlField;
+    }
 
     public SourceFieldParameter(GlobalConstant.SOURCE_KEY sourceKey, String parameterName, GlobalConstant.PSQL_PARAMETER_TYPE parameterType, String precision, Integer parameterOrder, Boolean etlField) {
         this.sourceKey = sourceKey;

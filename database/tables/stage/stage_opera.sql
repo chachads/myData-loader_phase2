@@ -4,9 +4,6 @@ DROP TABLE IF EXISTS stage.stage_opera CASCADE;
 
 CREATE TABLE IF NOT EXISTS stage.stage_opera
 (
-    stage_id serial not null,
-    etl_batch_id character varying COLLATE pg_catalog."default",
-    source_id integer,
     resort character varying COLLATE pg_catalog."default",
     business_date date,
     reservation_marker character varying COLLATE pg_catalog."default",
@@ -84,6 +81,8 @@ CREATE TABLE IF NOT EXISTS stage.stage_opera
     channel_type character varying COLLATE pg_catalog."default",
     insert_date character varying COLLATE pg_catalog."default",
     update_date timestamp without time zone,
+    etl_batch_id character varying COLLATE pg_catalog."default",
+    source_id integer,
     etl_file_name character varying COLLATE pg_catalog."default",
     etl_ingest_datetime timestamp without time zone
 )

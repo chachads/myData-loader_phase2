@@ -1,7 +1,7 @@
 -- Table: warehouse.reservation_business_date_f
 CREATE SCHEMA IF NOT EXISTS warehouse;
 
-DROP TABLE IF EXISTS warehouse.reservation_business_date_f;
+DROP TABLE IF EXISTS warehouse.reservation_business_date_f CASCADE;
 
 CREATE TABLE IF NOT EXISTS warehouse.reservation_business_date_f
 (

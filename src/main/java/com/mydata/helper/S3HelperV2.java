@@ -92,9 +92,12 @@ public class S3HelperV2 implements IS3Helper {
             e.printStackTrace();
         }
         File localFile = new File(localFilePath);
-        if (localFile.exists())
+        if (localFile.exists()) {
+            System.out.println(String.format("local file %s FOUND",localFilePath));
             s3HelperResponse.setLocalFilePath(localFilePath);
-
+        }
+        else
+            System.out.println(String.format("ERROR ERROR ERROR local file %s NOT FOUND",localFilePath));
         return s3HelperResponse;
     }
 
