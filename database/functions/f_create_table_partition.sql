@@ -14,7 +14,7 @@ AS $BODY$
 DECLARE partitionTableName character varying;
 DECLARE partitionSQL character varying;
 BEGIN
-    partitionTableName = tableName || '_' || regexp_replace(partitionValue, '[^\w]+','','g');
+    partitionTableName = tableName || '_code_partition_' || regexp_replace(partitionValue, '[^\w]+','','g');
     partitionSQL = 'CREATE TABLE IF NOT EXISTS ' || partitionTableName || ' PARTITION OF ' || tableName || ' FOR VALUES IN (''' || partitionValue || '''' || ')';
     EXECUTE (partitionSQL);
     return 0;

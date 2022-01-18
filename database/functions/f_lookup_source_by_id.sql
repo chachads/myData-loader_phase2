@@ -14,7 +14,7 @@ BEGIN
     FROM
         lookup.lookup_source
     WHERE
-        source_id = sourceId;
+        internal_source_id = sourceId;
     RETURN sourceKey;
 END;
 $BODY$;

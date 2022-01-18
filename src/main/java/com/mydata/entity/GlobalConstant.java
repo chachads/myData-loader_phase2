@@ -5,7 +5,7 @@ import java.util.Collections;
 import java.util.List;
 
 public interface GlobalConstant {
-    public static final List<SourceFieldParameter> sourceFieldParameterList = Collections.unmodifiableList(
+   /* public static final List<SourceFieldParameter> sourceFieldParameterList = Collections.unmodifiableList(
             new ArrayList<SourceFieldParameter>() {
                 {
                     add(new SourceFieldParameter(SOURCE_KEY.ONQ_PMSLEDGER, "etl_batch_id", PSQL_PARAMETER_TYPE.CHARACTER_VARYING, null, 1, true));
@@ -143,7 +143,7 @@ public interface GlobalConstant {
                     add(new SourceFieldParameter(SOURCE_KEY.OPERA, "etl_file_name", PSQL_PARAMETER_TYPE.CHARACTER_VARYING, null, 79, true));
                     add(new SourceFieldParameter(SOURCE_KEY.OPERA, "etl_ingest_datetime", PSQL_PARAMETER_TYPE.TIMESTAMP, "numeric(38,10)",80, true));                }
             });
-
+*/
     enum DB_CONNECTION_KEY {
         DB_URL,
         DB_UID,

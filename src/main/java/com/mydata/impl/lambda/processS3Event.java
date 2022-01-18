@@ -7,10 +7,10 @@ import com.mydata.entity.GlobalConstant;
 import com.mydata.entity.S3HelperResponse;
 import com.mydata.entity.SourceFieldParameter;
 import com.mydata.entity.domain.IngestSourceDetail;
+import com.mydata.helper.CommonUtils;
 import com.mydata.helper.DBConnection;
 import com.mydata.helper.IS3Helper;
-import com.mydata.helper.S3HelperV2;
-import com.mydata.impl.IngestionWorker;
+import com.mydata.helper.S3Helper;
 import com.opencsv.CSVParser;
 import com.opencsv.CSVParserBuilder;
 import com.opencsv.CSVReader;
@@ -59,7 +59,7 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
 
             PreparedStatement preparedStatement = dbConnection.prepareStatement(String.format("INSERT INTO %s values (%s)", ingestSourceDetail.getStageTableName(), paramQueryString));
 
-            IS3Helper s3 = new S3HelperV2(ingestSourceDetail.getS3HelperRequest());
+            IS3Helper s3 = new S3Helper(ingestSourceDetail.getS3HelperRequest());
             S3HelperResponse s3HelperResponse = s3.saveFileLocally();
             String etlBatchId = "t" + UUID.randomUUID().toString().replace("-", "");
             File localFile = new File(s3HelperResponse.getLocalFilePath());
@@ -105,7 +105,6 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
                     for (Object object : jarray) {
                         rowCount++;
                         createPreparedStatement(preparedStatement, ingestSourceDetail.getSourceFormat(), object, paramList, etlBatchId, etlFileName, ingestSourceDetail.getDbSourceId());
-                        System.out.println(String.format("Prepared statement is %s", preparedStatement.toString()));
                         preparedStatement.addBatch();
                         if (rowCount % batchSize == 0 || rowCount == jarray.size()) {
                             System.out.println(String.format("COMMITTING BATCH. Row Count: %d", rowCount));
@@ -113,23 +112,8 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
                             System.out.println(String.format("COMMITTING BATCH. Row Count: %d. Execute Status: %d", rowCount, rowsInserted.length));
                         }
                     }
-                    System.out.println("finished parsing");
                     break;
             }
-//////            ingestSourceDetail.getFileTrackerDetail().setInsertRowCount(rowCount);
-            System.out.println(ingestSourceDetail.toString());
-            IngestionWorker worker = new IngestionWorker(ingestSourceDetail);
-            // commented out for now.
-            //worker.doWork();
-/*
-        IS3Helper s3 = new S3HelperV2(ingestSourceDetail.getS3HelperRequest());
-        System.out.println("CALLING SAVE FILE LOCALLY");
-        s3.saveFileLocally();
-        InputStream streamToLoad = s3.readObject().getObjectStream();
-        System.out.println("END - READING INPUT STREAM");
-        System.out.println("START - WRITING STREAM TO DB");
-
-        ingestSourceDetail.getDbHelper().loadStream(ingestSourceDetail, streamToLoad);*/
             System.out.println("END - WRITING STREAM TO DB");
         } catch (Exception e) {
             e.printStackTrace();
@@ -251,11 +235,11 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
                         else {
                             switch (sourceFormat) {
                                 case "CSV":
-                                    fieldBooleanValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > p.getParameterOrder()) ? getSQLBoolean(lambdaCSVRecord[p.getParameterOrder() - 1]) : null;
+                                    fieldBooleanValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > p.getParameterOrder()) ? CommonUtils.getSQLBoolean(lambdaCSVRecord[p.getParameterOrder() - 1]) : null;
                                     preparedStatement.setBoolean(p.getParameterOrder(), fieldBooleanValue);
                                     break;
                                 case "JSON":
-                                    fieldBooleanValue = (lambdaJSONRecord != null && lambdaJSONRecord.containsKey(p.getParameterName()) && lambdaJSONRecord.get(p.getParameterName()) != null ? getSQLBoolean(lambdaJSONRecord.get(p.getParameterName()).toString()) : false);
+                                    fieldBooleanValue = (lambdaJSONRecord != null && lambdaJSONRecord.containsKey(p.getParameterName()) && lambdaJSONRecord.get(p.getParameterName()) != null ? CommonUtils.getSQLBoolean(lambdaJSONRecord.get(p.getParameterName()).toString()) : false);
                                     preparedStatement.setBoolean(p.getParameterOrder(), fieldBooleanValue);
                                     break;
                             }
@@ -301,11 +285,11 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
                         if (!p.getEtlField())
                             switch (sourceFormat) {
                                 case "CSV":
-                                    fieldDateValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > Integer.valueOf(p.getParameterOrder())) ? getSQLDate(lambdaCSVRecord[p.getParameterOrder() - 1], p.getDateFormat()) : null;
+                                    fieldDateValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > Integer.valueOf(p.getParameterOrder())) ? CommonUtils.getSQLDate(lambdaCSVRecord[p.getParameterOrder() - 1], p.getDateFormat()) : null;
                                     preparedStatement.setDate(p.getParameterOrder(), fieldDateValue);
                                     break;
                                 case "JSON":
-                                    fieldDateValue = (lambdaJSONRecord != null && lambdaJSONRecord.containsKey(p.getParameterName()) && lambdaJSONRecord.get(p.getParameterName()) != null ? getSQLDate(lambdaJSONRecord.get(p.getParameterName()).toString(), p.getDateFormat()) : null);
+                                    fieldDateValue = (lambdaJSONRecord != null && lambdaJSONRecord.containsKey(p.getParameterName()) && lambdaJSONRecord.get(p.getParameterName()) != null ? CommonUtils.getSQLDate(lambdaJSONRecord.get(p.getParameterName()).toString(), p.getDateFormat()) : null);
                                     preparedStatement.setDate(p.getParameterOrder(), fieldDateValue);
                                     break;
                             }
@@ -343,11 +327,11 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
                         } else {
                             switch (sourceFormat) {
                                 case "CSV":
-                                    fieldTimeStampValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > p.getParameterOrder()) ? getSQLTimestamp(lambdaCSVRecord[p.getParameterOrder() - 1]) : null;
+                                    fieldTimeStampValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > p.getParameterOrder()) ? CommonUtils.getSQLTimestamp(lambdaCSVRecord[p.getParameterOrder() - 1]) : null;
                                     preparedStatement.setTimestamp(p.getParameterOrder(), fieldTimeStampValue);
                                     break;
                                 case "JSON":
-                                    fieldTimeStampValue = (lambdaJSONRecord != null && lambdaJSONRecord.containsKey(p.getParameterName()) && lambdaJSONRecord.get(p.getParameterName()) != null ? getSQLTimestamp(lambdaJSONRecord.get(p.getParameterName()).toString()) : null);
+                                    fieldTimeStampValue = (lambdaJSONRecord != null && lambdaJSONRecord.containsKey(p.getParameterName()) && lambdaJSONRecord.get(p.getParameterName()) != null ? CommonUtils.getSQLTimestamp(lambdaJSONRecord.get(p.getParameterName()).toString()) : null);
                                     preparedStatement.setTimestamp(p.getParameterOrder(), fieldTimeStampValue);
                                     break;
                             }
@@ -364,36 +348,6 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
 
     }
 
-
-    protected static Boolean getSQLBoolean(String booleanValue) {
-        if (booleanValue == null || booleanValue.equals("0") || booleanValue.equalsIgnoreCase("FALSE") || booleanValue.equalsIgnoreCase("N"))
-            return false;
-        else
-            return (booleanValue.equals("1") || booleanValue.equalsIgnoreCase("TRUE") || booleanValue.equalsIgnoreCase("N"));
-    }
-
-    protected static Timestamp getSQLTimestamp(String timestampValue) {
-        try {
-            String timeStampFormat = "MM/dd/yy hh:mm:ss";
-            SimpleDateFormat sdf1 = new SimpleDateFormat(timeStampFormat);
-            java.util.Date date = sdf1.parse(timestampValue);
-            java.sql.Timestamp sqlStartDate = new java.sql.Timestamp(date.getTime());
-            return sqlStartDate;
-        } catch (ParseException e) {
-            return null;
-        }
-    }
-
-
-    protected static Date getSQLDate(String dateValue, String dateFormat) {
-        try {
-            SimpleDateFormat sdf1 = new SimpleDateFormat(dateFormat);
-            java.util.Date javaDate = sdf1.parse(dateValue);
-            return new java.sql.Date(javaDate.getTime());
-        } catch (Exception e) {
-            return null;
-        }
-    }
 
 
 }

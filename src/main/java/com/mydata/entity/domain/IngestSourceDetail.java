@@ -1,14 +1,8 @@
 package com.mydata.entity.domain;
 
-import com.mydata.entity.DBHelperRequest;
 import com.mydata.entity.GlobalConstant;
 import com.mydata.entity.S3HelperRequest;
 import com.mydata.entity.tracker.SourceTrackerDetail;
-import com.mydata.helper.DBHelper;
-import com.mydata.helper.IDBHelper;
-
-import java.sql.Connection;
-import java.sql.SQLException;
 
 public class IngestSourceDetail {
     private final String fromBucket;
@@ -20,11 +14,9 @@ public class IngestSourceDetail {
     private String sourceFormat;
     private String toBucket;
     private String sourceKey;
-    private IDBHelper dbHelper;
     private String localFilePath;
     private SourceTrackerDetail sourceTrackerDetail;
     private Integer dbSourceId;
-    private Connection lambdaDBConnection;
     private String sourceDateFormat;
     private final Boolean setupDB;
 
@@ -33,18 +25,6 @@ public class IngestSourceDetail {
         this.fromBucket = fromBucket;
         setupDB = false;
         setupIngestionDetail();
-    }
-
-    public IngestSourceDetail(String s3EventPrefix, String fromBucket, Connection lambdaDBConnection) {
-        this.s3EventPrefix = s3EventPrefix;
-        this.fromBucket = fromBucket;
-        this.lambdaDBConnection = lambdaDBConnection;
-        setupDB = true;
-        setupIngestionDetail();
-    }
-
-    public Connection getLambdaDBConnection() {
-        return lambdaDBConnection;
     }
 
     public String getSourceDateFormat() {
@@ -93,13 +73,6 @@ public class IngestSourceDetail {
         return s3HelperRequest;
     }
 
-    public IDBHelper getDbHelper() {
-        if (dbHelper == null) {
-            DBHelperRequest dbHelperRequest = System.getenv().containsKey(GlobalConstant.DB_CONNECTION_KEY.DB_SECRETS_NAME.toString()) ? new DBHelperRequest(System.getenv(GlobalConstant.DB_CONNECTION_KEY.DB_SECRETS_NAME.toString())) : new DBHelperRequest();
-            dbHelper = new DBHelper(dbHelperRequest, lambdaDBConnection);
-        }
-        return dbHelper;
-    }
 
     public String getLocalFilePath() {
         return localFilePath;
@@ -133,14 +106,14 @@ public class IngestSourceDetail {
         s3HelperRequest.setFileName(rawFileName);
         sourceKey = s3EventPrefix.replace("ldz", "").replace(rawFileName, "").replace("/", "");
         s3HelperRequest.setSourceTypeKey(GlobalConstant.SOURCE_KEY.valueOf(sourceKey));
-        if (setupDB) {
+        /*if (setupDB) {
             // Set up the database fields based on the source type key.
             try {
                 getDbHelper().refreshSourceDefinition(this);
             } catch (SQLException ex) {
 
             }
-        }
+        }*/
         sourceTrackerDetail = new SourceTrackerDetail(GlobalConstant.SOURCE_TYPE.FILE, sourceKey, rawFileName, fromBucket, s3EventPrefix, toBucket, toKey, stageTableName);
     }
 

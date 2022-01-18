@@ -12,11 +12,11 @@ import software.amazon.awssdk.services.s3.model.*;
 
 import java.io.*;
 
-public class S3HelperV2 implements IS3Helper {
+public class S3Helper implements IS3Helper {
 
     private S3HelperRequest s3HelperRequest;
 
-    public S3HelperV2(S3HelperRequest s3HelperRequest) {
+    public S3Helper(S3HelperRequest s3HelperRequest) {
         this.s3HelperRequest = s3HelperRequest;
     }
 

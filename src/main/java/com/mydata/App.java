@@ -3,6 +3,7 @@ package com.mydata;
 import com.mydata.entity.GlobalConstant;
 import com.mydata.entity.SourceFieldParameter;
 import com.mydata.entity.domain.IngestSourceDetail;
+import com.mydata.helper.CommonUtils;
 import com.opencsv.CSVParser;
 import com.opencsv.CSVParserBuilder;
 import com.opencsv.CSVReader;
@@ -19,7 +20,7 @@ import java.sql.*;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.stream.Collectors;
+import java.util.concurrent.TimeUnit;
 
 public class App {
     static Connection dbConnection;
@@ -38,6 +39,25 @@ public class App {
 
     public static void main(String[] args) {
         System.out.println("HW");
+        String arrivalDate = "2021-10-01";
+        String departureDate = "2021-10-15";
+        java.util.Date beginDate = CommonUtils.getJavaDate(arrivalDate, "yyyy-MM-dd");
+        java.util.Date endDate = CommonUtils.getJavaDate(departureDate, "yyyy-MM-dd");
+        Long los = TimeUnit.MILLISECONDS.toDays((endDate.getTime() - beginDate.getTime()));
+        System.out.println(String.format("LOS: %d", los));
+        System.out.println(String.format("%s,%s", beginDate, endDate));
+        List<Date> stayDateList = new ArrayList<>();
+        for (int i = 0; i < los; i++) {
+            stayDateList.add(new Date(CommonUtils.addDays(beginDate,i).getTime()));
+        }
+        System.out.println("PRINTING DATE RANGE");
+        stayDateList.forEach(d -> System.out.println(d));
+
+    }
+
+
+    protected static void loadData() {
+
         try {
             String sourceFormat = "CSV";
             establishDBConnection();
@@ -55,7 +75,7 @@ public class App {
             Integer batchSize = 1000;
             PreparedStatement preparedStatement = dbConnection.prepareStatement(String.format("INSERT INTO %s values (%s)", stageTableName, paramQueryString));
 
-            switch (ingestSourceDetail.getSourceFormat()){
+            switch (ingestSourceDetail.getSourceFormat()) {
                 case "CSV":
                     BufferedReader reader = new BufferedReader(new FileReader(ingestSourceDetail.getLocalFilePath()));
                     CSVParser parser = new CSVParserBuilder().withSeparator(',').withIgnoreQuotations(true).build();
@@ -67,7 +87,7 @@ public class App {
                         openBatch = true;
                         createPreparedStatement(preparedStatement, ingestSourceDetail.getSourceFormat(), line, paramList, etlBatchId, etlFileName, ingestSourceDetail.getDbSourceId());
                         preparedStatement.addBatch();
-                        if (rowCount % batchSize == 0 ) {
+                        if (rowCount % batchSize == 0) {
                             System.out.println(String.format("COMMITTING BATCH. Row Count: %d", rowCount));
                             int[] rowsInserted = preparedStatement.executeBatch();
                             System.out.println(String.format("COMMITTING BATCH. Row Count: %d. Execute Status: %d", rowCount, rowsInserted.length));
@@ -80,10 +100,6 @@ public class App {
                     }
                     break;
                 case "JSON":
-                    List<SourceFieldParameter> sourceFieldParameterList = GlobalConstant.sourceFieldParameterList.stream().
-                            filter(p -> p.getSourceKey().equals(ingestSourceDetail.getESourceKey())).
-                            sorted(Comparator.comparing(SourceFieldParameter::getParameterOrder)).
-                            collect(Collectors.toList());
 
                     JSONParser jsonParser = new JSONParser();
                     JSONArray jarray = (JSONArray) jsonParser.parse(new FileReader(ingestSourceDetail.getLocalFilePath()));
@@ -106,8 +122,9 @@ public class App {
         } catch (Exception e) {
             e.printStackTrace();
         }
-    }
 
+
+    }
 
     protected static void createPreparedStatement(PreparedStatement preparedStatement, String sourceFormat, Object inputRecord, List<SourceFieldParameter> sourceFieldParameterList, String etlBatchId, String etlFileName, Integer sourceId) {
         JSONObject jsonRecord = null;
@@ -309,8 +326,8 @@ public class App {
     // - final methods
     protected static List<SourceFieldParameter> readStageTableDef(IngestSourceDetail ingestSourceDetail) throws SQLException {
         String[] stageTableNameList = ingestSourceDetail.getStageTableName().split("\\.");
-        String stageTableName= stageTableNameList[stageTableNameList.length-1];
-        PreparedStatement ps = dbConnection.prepareStatement(String.format("select column_name,data_type,ordinal_position,numeric_precision from information_schema.columns where table_name = '%s' order by ordinal_position;",stageTableName));
+        String stageTableName = stageTableNameList[stageTableNameList.length - 1];
+        PreparedStatement ps = dbConnection.prepareStatement(String.format("select column_name,data_type,ordinal_position,numeric_precision from information_schema.columns where table_name = '%s' order by ordinal_position;", stageTableName));
         ResultSet rs = ps.executeQuery();
         List<SourceFieldParameter> paramList = new ArrayList<>();
         while (rs.next()) {
