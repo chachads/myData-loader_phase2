@@ -15,11 +15,13 @@ import org.json.simple.parser.JSONParser;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
-import java.sql.Date;
 import java.sql.*;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 public class App {
@@ -39,6 +41,11 @@ public class App {
 
     public static void main(String[] args) {
         System.out.println("HW");
+        loadData();
+
+    }
+
+    protected static void dateTest() {
         String arrivalDate = "2021-10-01";
         String departureDate = "2021-10-15";
         java.util.Date beginDate = CommonUtils.getJavaDate(arrivalDate, "yyyy-MM-dd");
@@ -48,31 +55,29 @@ public class App {
         System.out.println(String.format("%s,%s", beginDate, endDate));
         List<Date> stayDateList = new ArrayList<>();
         for (int i = 0; i < los; i++) {
-            stayDateList.add(new Date(CommonUtils.addDays(beginDate,i).getTime()));
+            stayDateList.add(new Date(CommonUtils.addDays(beginDate, i).getTime()));
         }
         System.out.println("PRINTING DATE RANGE");
         stayDateList.forEach(d -> System.out.println(d));
-
     }
-
 
     protected static void loadData() {
 
         try {
             String sourceFormat = "CSV";
             establishDBConnection();
-            IngestSourceDetail ingestSourceDetail = refreshSourceDefinition("ONQ_PMSLEDGER");
+            IngestSourceDetail ingestSourceDetail = refreshSourceDefinition("ONQ_CRSSTAY");
             List<SourceFieldParameter> paramList = readStageTableDef(ingestSourceDetail);
             String paramQueryString = getParamQueryStringBySource(paramList.size());
             String etlBatchId = "t" + UUID.randomUUID().toString().replace("-", "");
             //String fileFullName = "/Users/chachads/Downloads/GLAPX_20211018_OTB.csv";
-            String fileFullName = "/Users/chachads/Downloads/LEDGER_Highgate_Hotels_20211214_20211215_1230.json";
+            String fileFullName = "/Users/chachads/pocs/do/hg/STAY_Highgate_Hotels_20211215_20211216_1330.json";
             File file = new File(fileFullName);
             String etlFileName = (file.exists()) ? file.getName() : "notfound";
             String stageTableName = ingestSourceDetail.getStageTableName();
             ingestSourceDetail.setLocalFilePath(fileFullName);
-            Long rowCount = 0L;
-            Integer batchSize = 1000;
+            Integer rowCount = 0;
+            Integer batchSize = 10000;
             PreparedStatement preparedStatement = dbConnection.prepareStatement(String.format("INSERT INTO %s values (%s)", stageTableName, paramQueryString));
 
             switch (ingestSourceDetail.getSourceFormat()) {
@@ -85,7 +90,7 @@ public class App {
                     while ((line = csvReader.readNext()) != null) {
                         rowCount++;
                         openBatch = true;
-                        createPreparedStatement(preparedStatement, ingestSourceDetail.getSourceFormat(), line, paramList, etlBatchId, etlFileName, ingestSourceDetail.getDbSourceId());
+                        createPreparedStatement(preparedStatement, ingestSourceDetail.getSourceFormat(), line, paramList, etlBatchId, etlFileName, ingestSourceDetail.getDbSourceId(),rowCount);
                         preparedStatement.addBatch();
                         if (rowCount % batchSize == 0) {
                             System.out.println(String.format("COMMITTING BATCH. Row Count: %d", rowCount));
@@ -105,7 +110,7 @@ public class App {
                     JSONArray jarray = (JSONArray) jsonParser.parse(new FileReader(ingestSourceDetail.getLocalFilePath()));
                     for (Object object : jarray) {
                         rowCount++;
-                        createPreparedStatement(preparedStatement, ingestSourceDetail.getSourceFormat(), object, paramList, etlBatchId, etlFileName, ingestSourceDetail.getDbSourceId());
+                        createPreparedStatement(preparedStatement, ingestSourceDetail.getSourceFormat(), object, paramList, etlBatchId, etlFileName, ingestSourceDetail.getDbSourceId(),rowCount);
 
                         preparedStatement.addBatch();
                         if (rowCount % batchSize == 0 || rowCount == jarray.size()) {
@@ -113,7 +118,7 @@ public class App {
                             int[] rowsInserted = preparedStatement.executeBatch();
                             System.out.println(String.format("COMMITTING BATCH. Row Count: %d. Execute Status: %d", rowCount, rowsInserted.length));
                         }
-                        ingestSourceDetail.getFileTrackerDetail().setInsertRowCount(rowCount);
+                        //ingestSourceDetail.getFileTrackerDetail().setInsertRowCount(rowCount);
                     }
 
                     System.out.println("finished parsing");
@@ -126,7 +131,7 @@ public class App {
 
     }
 
-    protected static void createPreparedStatement(PreparedStatement preparedStatement, String sourceFormat, Object inputRecord, List<SourceFieldParameter> sourceFieldParameterList, String etlBatchId, String etlFileName, Integer sourceId) {
+    protected static void createPreparedStatement(PreparedStatement preparedStatement, String sourceFormat, Object inputRecord, List<SourceFieldParameter> sourceFieldParameterList, String etlBatchId, String etlFileName, Integer sourceId,Integer lineNumber) {
         JSONObject jsonRecord = null;
         String[] csvRecord = null;
         switch (sourceFormat) {
@@ -141,7 +146,153 @@ public class App {
         }
         final JSONObject lambdaJSONRecord = jsonRecord;
         final String[] lambdaCSVRecord = csvRecord;
-        sourceFieldParameterList.forEach(p -> {
+
+        for (int i = 0; i < sourceFieldParameterList.size(); i++) {
+            SourceFieldParameter p = sourceFieldParameterList.get(i);
+            GlobalConstant.PSQL_PARAMETER_TYPE fieldType = p.getParameterType();
+            try {
+                switch (fieldType) {
+                    case CHARACTER_VARYING:
+                        if (p.getEtlField())
+                            if (p.getParameterName().equals(GlobalConstant.ETL_COLUMN_NAME.etl_batch_id.toString()))
+                                preparedStatement.setString(p.getParameterOrder(), etlBatchId);
+                            else if (p.getParameterName().equals(GlobalConstant.ETL_COLUMN_NAME.etl_file_name.toString()))
+                                preparedStatement.setString(p.getParameterOrder(), etlFileName);
+                            else
+                                preparedStatement.setString(p.getParameterOrder(), "");
+                        else {
+                            switch (sourceFormat) {
+                                case "CSV":
+                                    preparedStatement.setString(p.getParameterOrder(), (lambdaCSVRecord != null && lambdaCSVRecord.length > Integer.valueOf(p.getParameterOrder()) ? lambdaCSVRecord[p.getParameterOrder() - 1] : null));
+                                    break;
+                                case "JSON":
+                                    preparedStatement.setString(p.getParameterOrder(), (lambdaJSONRecord != null && lambdaJSONRecord.containsKey(p.getParameterName()) && lambdaJSONRecord.get(p.getParameterName()) != null) ? lambdaJSONRecord.get(p.getParameterName()).toString() : null);
+                                    break;
+                            }
+                        }
+                        break;
+                    case BOOLEAN:
+                        boolean fieldBooleanValue;
+                        if (p.getEtlField())
+                            fieldBooleanValue = false;
+                        else {
+                            switch (sourceFormat) {
+                                case "CSV":
+                                    fieldBooleanValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > p.getParameterOrder()) ? CommonUtils.getSQLBoolean(lambdaCSVRecord[p.getParameterOrder() - 1]) : null;
+                                    preparedStatement.setBoolean(p.getParameterOrder(), fieldBooleanValue);
+                                    break;
+                                case "JSON":
+                                    fieldBooleanValue = (lambdaJSONRecord != null && lambdaJSONRecord.containsKey(p.getParameterName()) && lambdaJSONRecord.get(p.getParameterName()) != null ? CommonUtils.getSQLBoolean(lambdaJSONRecord.get(p.getParameterName()).toString()) : false);
+                                    preparedStatement.setBoolean(p.getParameterOrder(), fieldBooleanValue);
+                                    break;
+                            }
+                        }
+                        break;
+
+                    case BIGINT:
+                        Long fieldLongValue = null;
+                        if (p.getEtlField())
+                            fieldLongValue = null;
+                        else {
+                            switch (sourceFormat) {
+                                case "CSV":
+                                    fieldLongValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > p.getParameterOrder()) ? Long.parseLong(lambdaCSVRecord[p.getParameterOrder() - 1]) : null;
+                                    preparedStatement.setLong(p.getParameterOrder(), fieldLongValue);
+                                    break;
+                                case "JSON":
+                                    fieldLongValue = (lambdaJSONRecord != null && lambdaJSONRecord.containsKey(p.getParameterName()) && lambdaJSONRecord.get(p.getParameterName()) != null ? (Long) lambdaJSONRecord.get(p.getParameterName()) : 0);
+                                    preparedStatement.setLong(p.getParameterOrder(), fieldLongValue);
+                                    break;
+                            }
+                        }
+                        break;
+                    case DOUBLE:
+                        Double fieldDoubleValue = 0D;
+                        if (p.getEtlField())
+                            fieldDoubleValue = null;
+                        else {
+                            switch (sourceFormat) {
+                                case "CSV":
+                                    fieldDoubleValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > Integer.valueOf(p.getParameterOrder())) ? Double.parseDouble(lambdaCSVRecord[p.getParameterOrder() - 1]) : null;
+                                    preparedStatement.setDouble(p.getParameterOrder(), fieldDoubleValue);
+                                    break;
+                                case "JSON":
+                                    fieldDoubleValue = (lambdaJSONRecord != null && lambdaJSONRecord.containsKey(p.getParameterName()) && lambdaJSONRecord.get(p.getParameterName()) != null ? (Double) lambdaJSONRecord.get(p.getParameterName()) : null);
+                        //            preparedStatement.setDouble(p.getParameterOrder(), fieldDoubleValue);
+                                    break;
+                            }
+                            if (fieldDoubleValue == null)
+                                preparedStatement.setNull(p.getParameterOrder(), Types.DOUBLE);
+                            else
+                                preparedStatement.setDouble(p.getParameterOrder(), fieldDoubleValue);
+                        }
+                        break;
+                    case DATE:
+                        Date fieldDateValue = null;
+                        if (!p.getEtlField())
+                            switch (sourceFormat) {
+                                case "CSV":
+                                    fieldDateValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > Integer.valueOf(p.getParameterOrder())) ? CommonUtils.getSQLDate(lambdaCSVRecord[p.getParameterOrder() - 1], p.getDateFormat()) : null;
+                                    preparedStatement.setDate(p.getParameterOrder(), fieldDateValue);
+                                    break;
+                                case "JSON":
+                                    fieldDateValue = (lambdaJSONRecord != null && lambdaJSONRecord.containsKey(p.getParameterName()) && lambdaJSONRecord.get(p.getParameterName()) != null ? CommonUtils.getSQLDate(lambdaJSONRecord.get(p.getParameterName()).toString(), p.getDateFormat()) : null);
+                                    preparedStatement.setDate(p.getParameterOrder(), fieldDateValue);
+                                    break;
+                            }
+                        break;
+                    case INTEGER:
+                        Integer fieldIntegerValue;
+                        if (p.getEtlField()) {
+                            fieldIntegerValue = 1;
+                            preparedStatement.setInt(p.getParameterOrder(), fieldIntegerValue);
+                        } else {
+                            if (p.getParameterName().equals("source_id"))
+                                preparedStatement.setInt(p.getParameterOrder(), sourceId);
+                            else {
+                                switch (sourceFormat) {
+                                    case "CSV":
+                                        fieldIntegerValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > Integer.valueOf(p.getParameterOrder())) ? Integer.parseInt(lambdaCSVRecord[p.getParameterOrder() - 1]) : null;
+                                        preparedStatement.setInt(p.getParameterOrder(), fieldIntegerValue);
+                                        break;
+                                    case "JSON":
+                                        fieldIntegerValue = (lambdaJSONRecord != null && lambdaJSONRecord.containsKey(p.getParameterName()) && lambdaJSONRecord.get(p.getParameterName()) != null ? (Integer) lambdaJSONRecord.get(p.getParameterName()) : null);
+                                        preparedStatement.setInt(p.getParameterOrder(), fieldIntegerValue);
+                                        break;
+                                }
+                            }
+                        }
+                        break;
+                    case TIMESTAMP:
+                        Timestamp fieldTimeStampValue = null;
+                        if (p.getEtlField()) {
+                            if (p.getParameterName().equals(GlobalConstant.ETL_COLUMN_NAME.etl_ingest_datetime.toString())) {
+                                fieldTimeStampValue = new Timestamp(System.currentTimeMillis());
+                                preparedStatement.setTimestamp(p.getParameterOrder(), fieldTimeStampValue);
+
+                            }
+                        } else {
+                            switch (sourceFormat) {
+                                case "CSV":
+                                    fieldTimeStampValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > p.getParameterOrder()) ? CommonUtils.getSQLTimestamp(lambdaCSVRecord[p.getParameterOrder() - 1]) : null;
+                                    preparedStatement.setTimestamp(p.getParameterOrder(), fieldTimeStampValue);
+                                    break;
+                                case "JSON":
+                                    fieldTimeStampValue = (lambdaJSONRecord != null && lambdaJSONRecord.containsKey(p.getParameterName()) && lambdaJSONRecord.get(p.getParameterName()) != null ? CommonUtils.getSQLTimestamp(lambdaJSONRecord.get(p.getParameterName()).toString()) : null);
+                                    preparedStatement.setTimestamp(p.getParameterOrder(), fieldTimeStampValue);
+                                    break;
+                            }
+                        }
+                        break;
+                }
+
+            } catch (SQLException e) {
+                System.out.println(String.format("Line Number: %d. Column: %s",lineNumber,p));
+                e.printStackTrace();
+            }
+        }
+
+        /*sourceFieldParameterList.forEach(p -> {
             GlobalConstant.PSQL_PARAMETER_TYPE fieldType = p.getParameterType();
             try {
                 switch (fieldType) {
@@ -200,7 +351,7 @@ public class App {
                         }
                         break;
                     case DOUBLE:
-                        Double fieldDoubleValue = null;
+                        Double fieldDoubleValue = 0D;
                         if (p.getEtlField())
                             fieldDoubleValue = null;
                         else {
@@ -278,7 +429,7 @@ public class App {
             } catch (Exception e) {
                 e.printStackTrace();
             }
-        });
+        });*/
 
         //      System.out.println(preparedStatement.toString());
 
