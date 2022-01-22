@@ -96,7 +96,7 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
                     logSourceTrackerIU(ingestSourceDetail.getIngestionTrackerDetail());
                     CommonUtils.LogToSystemOut("MOVING TO STAGE");
                     PreparedStatement moveToStage = dbConnection.prepareStatement(String.format("select * from lookup.f_process_stage_opera('%s');", etlBatchId));
-                    System.out.print(moveToStage.toString());
+                    CommonUtils.LogToSystemOut(moveToStage.toString());
                     moveToStage.execute();
                     // update move to warehouse completed
                     ingestSourceDetail.getIngestionTrackerDetail().seteIngestionStatus(GlobalConstant.INGESTION_STATUS.WAREHOUSE_WRITE_COMPLETE);

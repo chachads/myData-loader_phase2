@@ -40,8 +40,6 @@ public class App {
 
     public static void main(String[] args) {
         CommonUtils.LogToSystemOut("HW");
-        //CommonUtils.getDateStr("yyyyMMdd",null);
-        //loadData();
 
     }
 
