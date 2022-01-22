@@ -33,7 +33,7 @@ public class DBConnection {
 
             GetSecretValueResponse valueResponse = secretsClient.getSecretValue(valueRequest);
             String secret = valueResponse.secretString();
-            System.out.println(secret);
+            CommonUtils.LogToSystemOut(secret);
             JSONObject secretObject = new JSONObject(secret);
             // read proxy host first and then host.
             String hostName = secretObject.toMap().containsKey("proxyhost") ? secretObject.getString("proxyhost"):secretObject.toMap().containsKey("host") ? secretObject.getString("host"):null;

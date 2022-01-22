@@ -16,12 +16,11 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.sql.*;
+import java.sql.Date;
+import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 public class App {
@@ -40,8 +39,9 @@ public class App {
     }
 
     public static void main(String[] args) {
-        System.out.println("HW");
-        loadData();
+        CommonUtils.LogToSystemOut("HW");
+        //CommonUtils.getDateStr("yyyyMMdd",null);
+        //loadData();
 
     }
 
@@ -51,14 +51,14 @@ public class App {
         java.util.Date beginDate = CommonUtils.getJavaDate(arrivalDate, "yyyy-MM-dd");
         java.util.Date endDate = CommonUtils.getJavaDate(departureDate, "yyyy-MM-dd");
         Long los = TimeUnit.MILLISECONDS.toDays((endDate.getTime() - beginDate.getTime()));
-        System.out.println(String.format("LOS: %d", los));
-        System.out.println(String.format("%s,%s", beginDate, endDate));
+        CommonUtils.LogToSystemOut(String.format("LOS: %d", los));
+        CommonUtils.LogToSystemOut(String.format("%s,%s", beginDate, endDate));
         List<Date> stayDateList = new ArrayList<>();
         for (int i = 0; i < los; i++) {
             stayDateList.add(new Date(CommonUtils.addDays(beginDate, i).getTime()));
         }
-        System.out.println("PRINTING DATE RANGE");
-        stayDateList.forEach(d -> System.out.println(d));
+        CommonUtils.LogToSystemOut("PRINTING DATE RANGE");
+        stayDateList.forEach(d -> CommonUtils.LogToSystemOut(d.toString()));
     }
 
     protected static void loadData() {
@@ -93,15 +93,15 @@ public class App {
                         createPreparedStatement(preparedStatement, ingestSourceDetail.getSourceFormat(), line, paramList, etlBatchId, etlFileName, ingestSourceDetail.getDbSourceId(),rowCount);
                         preparedStatement.addBatch();
                         if (rowCount % batchSize == 0) {
-                            System.out.println(String.format("COMMITTING BATCH. Row Count: %d", rowCount));
+                            CommonUtils.LogToSystemOut(String.format("COMMITTING BATCH. Row Count: %d", rowCount));
                             int[] rowsInserted = preparedStatement.executeBatch();
-                            System.out.println(String.format("COMMITTING BATCH. Row Count: %d. Execute Status: %d", rowCount, rowsInserted.length));
+                            CommonUtils.LogToSystemOut(String.format("COMMITTING BATCH. Row Count: %d. Execute Status: %d", rowCount, rowsInserted.length));
                             openBatch = false;
                         }
                     }
                     if (openBatch) {
                         int[] rowsInserted = preparedStatement.executeBatch();
-                        System.out.println(String.format("COMMITTING BATCH. Row Count: %d. Execute Status: %d", rowCount, rowsInserted.length));
+                        CommonUtils.LogToSystemOut(String.format("COMMITTING BATCH. Row Count: %d. Execute Status: %d", rowCount, rowsInserted.length));
                     }
                     break;
                 case "JSON":
@@ -114,14 +114,14 @@ public class App {
 
                         preparedStatement.addBatch();
                         if (rowCount % batchSize == 0 || rowCount == jarray.size()) {
-                            System.out.println(String.format("COMMITTING BATCH. Row Count: %d", rowCount));
+                            CommonUtils.LogToSystemOut(String.format("COMMITTING BATCH. Row Count: %d", rowCount));
                             int[] rowsInserted = preparedStatement.executeBatch();
-                            System.out.println(String.format("COMMITTING BATCH. Row Count: %d. Execute Status: %d", rowCount, rowsInserted.length));
+                            CommonUtils.LogToSystemOut(String.format("COMMITTING BATCH. Row Count: %d. Execute Status: %d", rowCount, rowsInserted.length));
                         }
                         //ingestSourceDetail.getFileTrackerDetail().setInsertRowCount(rowCount);
                     }
 
-                    System.out.println("finished parsing");
+                    CommonUtils.LogToSystemOut("finished parsing");
                     break;
             }
         } catch (Exception e) {
@@ -287,7 +287,7 @@ public class App {
                 }
 
             } catch (SQLException e) {
-                System.out.println(String.format("Line Number: %d. Column: %s",lineNumber,p));
+                CommonUtils.LogToSystemOut(String.format("Line Number: %d. Column: %s",lineNumber,p));
                 e.printStackTrace();
             }
         }
@@ -431,7 +431,7 @@ public class App {
             }
         });*/
 
-        //      System.out.println(preparedStatement.toString());
+        //      CommonUtils.LogToSystemOut(preparedStatement.toString());
 
     }
 

@@ -310,7 +310,7 @@ BEGIN
 
 
     return rowCount;
-END;
+END
 $BODY$;
 
 --select * from lookup.f_process_stage_opera('tc17ffa42dd584828abf25bfbe5f740e2');

@@ -2,7 +2,8 @@ package com.mydata.entity.domain;
 
 import com.mydata.entity.GlobalConstant;
 import com.mydata.entity.S3HelperRequest;
-import com.mydata.entity.tracker.SourceTrackerDetail;
+import com.mydata.entity.tracker.IngestionTrackerDetail;
+import com.mydata.helper.CommonUtils;
 
 public class IngestSourceDetail {
     private final String fromBucket;
@@ -15,15 +16,14 @@ public class IngestSourceDetail {
     private String toBucket;
     private String sourceKey;
     private String localFilePath;
-    private SourceTrackerDetail sourceTrackerDetail;
+    private IngestionTrackerDetail ingestionTrackerDetail;
     private Integer dbSourceId;
     private String sourceDateFormat;
-    private final Boolean setupDB;
+    private String statusMessage;
 
     public IngestSourceDetail(String s3EventPrefix, String fromBucket) {
         this.s3EventPrefix = s3EventPrefix;
         this.fromBucket = fromBucket;
-        setupDB = false;
         setupIngestionDetail();
     }
 
@@ -82,20 +82,23 @@ public class IngestSourceDetail {
         this.localFilePath = localFilePath;
     }
 
-    public SourceTrackerDetail getFileTrackerDetail() {
-        return sourceTrackerDetail;
+    public IngestionTrackerDetail getIngestionTrackerDetail() {
+        return ingestionTrackerDetail;
     }
 
-    public void setFileTrackerDetail(SourceTrackerDetail sourceTrackerDetail) {
-        this.sourceTrackerDetail = sourceTrackerDetail;
+    public void setIngestionTrackerDetail(IngestionTrackerDetail ingestionTrackerDetail) {
+        this.ingestionTrackerDetail = ingestionTrackerDetail;
     }
 
     protected void setupIngestionDetail() {
-        System.out.println("Started capture s3 details");
+        CommonUtils.LogToSystemOut("Started capture s3 details");
         String[] fileNameArray = s3EventPrefix.split("/");
 
         rawFileName = fileNameArray[fileNameArray.length - 1];
-        String toKey = String.format("rdz/%s", rawFileName);
+        sourceKey = s3EventPrefix.replace("ldz", "").replace(rawFileName, "").replace("/", "");
+        // RDZ format = rdz/currentdate/source/rawfile
+        String rdzFormat = "rdz/%s/%s/%s";
+        String toKey = String.format(rdzFormat, CommonUtils.getDateStr("yyyyMMdd",null), sourceKey,rawFileName);
         s3HelperRequest = new S3HelperRequest();
         s3HelperRequest.setFromBucket(fromBucket);
         s3HelperRequest.setFromKey(s3EventPrefix);
@@ -104,17 +107,8 @@ public class IngestSourceDetail {
         s3HelperRequest.setToBucket(toBucket);
         s3HelperRequest.setToKey(toKey);
         s3HelperRequest.setFileName(rawFileName);
-        sourceKey = s3EventPrefix.replace("ldz", "").replace(rawFileName, "").replace("/", "");
         s3HelperRequest.setSourceTypeKey(GlobalConstant.SOURCE_KEY.valueOf(sourceKey));
-        /*if (setupDB) {
-            // Set up the database fields based on the source type key.
-            try {
-                getDbHelper().refreshSourceDefinition(this);
-            } catch (SQLException ex) {
-
-            }
-        }*/
-        sourceTrackerDetail = new SourceTrackerDetail(GlobalConstant.SOURCE_TYPE.FILE, sourceKey, rawFileName, fromBucket, s3EventPrefix, toBucket, toKey, stageTableName);
+        ingestionTrackerDetail = new IngestionTrackerDetail(GlobalConstant.SOURCE_TYPE.FILE, sourceKey, rawFileName, fromBucket, s3EventPrefix, toBucket, toKey, stageTableName, GlobalConstant.INGESTION_STATUS.SOURCE_RECEIVED);
     }
 
     public GlobalConstant.SOURCE_KEY getESourceKey() {
@@ -127,6 +121,15 @@ public class IngestSourceDetail {
 
     public void setDbSourceId(Integer dbSourceId) {
         this.dbSourceId = dbSourceId;
+    }
+
+
+    public String getStatusMessage() {
+        return statusMessage;
+    }
+
+    public void setStatusMessage(String statusMessage) {
+        this.statusMessage = statusMessage;
     }
 
     /**

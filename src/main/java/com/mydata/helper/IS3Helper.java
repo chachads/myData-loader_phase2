@@ -3,9 +3,9 @@ package com.mydata.helper;
 import com.mydata.entity.S3HelperResponse;
 
 public interface IS3Helper {
-    String moveObject();
+    S3HelperResponse moveObject();
 
-    void deleteObject();
+    S3HelperResponse deleteObject();
 
     S3HelperResponse readObject();
 

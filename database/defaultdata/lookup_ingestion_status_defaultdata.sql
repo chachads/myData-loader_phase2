@@ -1,0 +1,12 @@
+DELETE FROM lookup.lookup_ingestion_status;
+INSERT INTO lookup.lookup_ingestion_status(internal_status_id, code, status_description) VALUES (-6, 'INGESTION_FAILED', 'Ingestion failed.');
+INSERT INTO lookup.lookup_ingestion_status(internal_status_id, code, status_description) VALUES (-5,'S3_STREAM_READ_FAILED','Source file read in stream failed.');
+INSERT INTO lookup.lookup_ingestion_status(internal_status_id, code, status_description) VALUES (-4, 'RDZ_WRITE_FAILED', 'Source file written to RDZ location failed.');
+INSERT INTO lookup.lookup_ingestion_status(internal_status_id, code, status_description) VALUES (-3,'WAREHOUSE_WRITE_FAILED','Data transferred from stage tables to warehouse tables failed.');
+INSERT INTO lookup.lookup_ingestion_status(internal_status_id, code, status_description) VALUES (-2,'STAGE_WRITE_FAILED','Source file write to stage failed.');
+INSERT INTO lookup.lookup_ingestion_status(internal_status_id, code, status_description) VALUES (1,'SOURCE_RECEIVED','Source file received.');
+INSERT INTO lookup.lookup_ingestion_status(internal_status_id, code, status_description) VALUES (2,'S3_STREAM_READ_COMPLETE','Source file read in stream.');
+INSERT INTO lookup.lookup_ingestion_status(internal_status_id, code, status_description) VALUES (3,'STAGE_WRITE_COMPLETE','Data transferred from ingestion routine to stage tables.');
+INSERT INTO lookup.lookup_ingestion_status(internal_status_id, code, status_description) VALUES (4,'WAREHOUSE_WRITE_COMPLETE','Data transferred from stage tables to warehouse tables.');
+INSERT INTO lookup.lookup_ingestion_status(internal_status_id, code, status_description) VALUES (5, 'RDZ_WRITE_COMPLETE', 'Source file written to RDZ location.');
+INSERT INTO lookup.lookup_ingestion_status(internal_status_id, code, status_description) VALUES (6, 'INGESTION_COMPLETE', 'Ingestion complete.');
