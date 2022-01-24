@@ -1,9 +1,10 @@
-package com.mydata.entity.domain;
+package com.mydata;
 
-import com.mydata.entity.GlobalConstant;
-import com.mydata.entity.S3HelperRequest;
-import com.mydata.entity.tracker.IngestionTrackerDetail;
-import com.mydata.helper.CommonUtils;
+import com.mydata.common.CommonUtils;
+import com.mydata.common.GlobalConstant;
+import com.mydata.s3.S3HelperRequest;
+
+import java.util.Objects;
 
 public class IngestSourceDetail {
     private final String fromBucket;
@@ -15,11 +16,12 @@ public class IngestSourceDetail {
     private String sourceFormat;
     private String toBucket;
     private String sourceKey;
-    private String localFilePath;
     private IngestionTrackerDetail ingestionTrackerDetail;
     private Integer dbSourceId;
     private String sourceDateFormat;
+    private String sourceTimeStampFormat;
     private String statusMessage;
+    private String warehouseFunctionName;
 
     public IngestSourceDetail(String s3EventPrefix, String fromBucket) {
         this.s3EventPrefix = s3EventPrefix;
@@ -35,8 +37,12 @@ public class IngestSourceDetail {
         this.sourceDateFormat = sourceDateFormat;
     }
 
-    public String getTempTableDefinition() {
-        return tempTableDefinition;
+    public String getSourceTimeStampFormat() {
+        return sourceTimeStampFormat;
+    }
+
+    public void setSourceTimeStampFormat(String sourceTimeStampFormat) {
+        this.sourceTimeStampFormat = sourceTimeStampFormat;
     }
 
     public void setTempTableDefinition(String tempTableDefinition) {
@@ -51,11 +57,9 @@ public class IngestSourceDetail {
         this.stageTableName = stageTableName;
     }
 
-
     public String getRawFileName() {
         return rawFileName;
     }
-
 
     public String getSourceFormat() {
         return sourceFormat;
@@ -73,42 +77,37 @@ public class IngestSourceDetail {
         return s3HelperRequest;
     }
 
-
-    public String getLocalFilePath() {
-        return localFilePath;
-    }
-
-    public void setLocalFilePath(String localFilePath) {
-        this.localFilePath = localFilePath;
-    }
-
     public IngestionTrackerDetail getIngestionTrackerDetail() {
         return ingestionTrackerDetail;
     }
 
-    public void setIngestionTrackerDetail(IngestionTrackerDetail ingestionTrackerDetail) {
-        this.ingestionTrackerDetail = ingestionTrackerDetail;
+    public String getWarehouseFunctionName() {
+        return warehouseFunctionName;
+    }
+
+    public void setWarehouseFunctionName(String warehouseFunctionName) {
+        this.warehouseFunctionName = warehouseFunctionName;
     }
 
     protected void setupIngestionDetail() {
-        CommonUtils.LogToSystemOut("Started capture s3 details");
+        CommonUtils.logToSystemOut("Started capture s3 details");
         String[] fileNameArray = s3EventPrefix.split("/");
 
         rawFileName = fileNameArray[fileNameArray.length - 1];
         sourceKey = s3EventPrefix.replace("ldz", "").replace(rawFileName, "").replace("/", "");
-        // RDZ format = rdz/currentdate/source/rawfile
+        // RDZ format = rdz/currentDate/source/rawFile
         String rdzFormat = "rdz/%s/%s/%s";
-        String toKey = String.format(rdzFormat, CommonUtils.getDateStr("yyyyMMdd",null), sourceKey,rawFileName);
+        String toPrefix = String.format(rdzFormat, CommonUtils.getDateStr("yyyyMMdd", null), sourceKey, rawFileName);
         s3HelperRequest = new S3HelperRequest();
         s3HelperRequest.setFromBucket(fromBucket);
-        s3HelperRequest.setFromKey(s3EventPrefix);
+        s3HelperRequest.setFromPrefix(s3EventPrefix);
         if (toBucket == null || toBucket.isEmpty() || toBucket.trim().isEmpty())
             toBucket = fromBucket;
         s3HelperRequest.setToBucket(toBucket);
-        s3HelperRequest.setToKey(toKey);
+        s3HelperRequest.setToPrefix(toPrefix);
         s3HelperRequest.setFileName(rawFileName);
         s3HelperRequest.setSourceTypeKey(GlobalConstant.SOURCE_KEY.valueOf(sourceKey));
-        ingestionTrackerDetail = new IngestionTrackerDetail(GlobalConstant.SOURCE_TYPE.FILE, sourceKey, rawFileName, fromBucket, s3EventPrefix, toBucket, toKey, stageTableName, GlobalConstant.INGESTION_STATUS.SOURCE_RECEIVED);
+        ingestionTrackerDetail = new IngestionTrackerDetail(GlobalConstant.SOURCE_TYPE.FILE, sourceKey, rawFileName, fromBucket, s3EventPrefix, toBucket, toPrefix, stageTableName, GlobalConstant.INGESTION_STATUS.SOURCE_RECEIVED);
     }
 
     public GlobalConstant.SOURCE_KEY getESourceKey() {
@@ -123,9 +122,8 @@ public class IngestSourceDetail {
         this.dbSourceId = dbSourceId;
     }
 
-
     public String getStatusMessage() {
-        return statusMessage;
+        return Objects.isNull(statusMessage) ? getIngestionTrackerDetail().getStatusMessage() : statusMessage;
     }
 
     public void setStatusMessage(String statusMessage) {

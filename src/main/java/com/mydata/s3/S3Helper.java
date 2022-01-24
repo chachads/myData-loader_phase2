@@ -1,7 +1,6 @@
-package com.mydata.helper;
+package com.mydata.s3;
 
-import com.mydata.entity.S3HelperRequest;
-import com.mydata.entity.S3HelperResponse;
+import com.mydata.common.CommonUtils;
 import org.apache.commons.codec.Charsets;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.io.input.ReaderInputStream;
@@ -15,8 +14,8 @@ import java.util.Objects;
 
 public class S3Helper implements IS3Helper {
 
-    private S3HelperRequest s3HelperRequest;
-    private S3HelperResponse s3HelperResponse;
+    private final S3HelperRequest s3HelperRequest;
+    private final S3HelperResponse s3HelperResponse;
 
     public S3Helper(S3HelperRequest s3HelperRequest) {
         this.s3HelperRequest = s3HelperRequest;
@@ -24,12 +23,12 @@ public class S3Helper implements IS3Helper {
     }
 
     private S3Client getS3() {
-        CommonUtils.LogToSystemOut("inside gets3");
+        CommonUtils.logToSystemOut("inside gets3");
         Region region = Region.US_EAST_1;
         S3Client s3 = S3Client.builder()
                 .region(region)
                 .build();
-        CommonUtils.LogToSystemOut("Got S3 client and returning");
+        CommonUtils.logToSystemOut("Got S3 client and returning");
         return s3;
     }
 
@@ -40,9 +39,9 @@ public class S3Helper implements IS3Helper {
         S3Client s3 = getS3();
         CopyObjectRequest copyReq = CopyObjectRequest.builder()
                 .sourceBucket(s3HelperRequest.getFromBucket())
-                .sourceKey(s3HelperRequest.getFromKey())
+                .sourceKey(s3HelperRequest.getFromPrefix())
                 .destinationBucket(s3HelperRequest.getToBucket())
-                .destinationKey(s3HelperRequest.getToKey())
+                .destinationKey(s3HelperRequest.getToPrefix())
                 .build();
 
         try {
@@ -55,70 +54,73 @@ public class S3Helper implements IS3Helper {
             }
         } catch (S3Exception e) {
             s3HelperResponse.setHasError(true);
-            s3HelperResponse.addStatusMessage(String.format("copyObject: %s:%s", e.awsErrorDetails().errorMessage(), s3HelperRequest.toString()));
-            System.err.println(e.awsErrorDetails().errorMessage());
+            s3HelperResponse.addStatusMessage(String.format("copyObject: %s:%s", e.awsErrorDetails().errorMessage(), s3HelperRequest));
+            CommonUtils.logErrorToSystemOut(e.awsErrorDetails().errorMessage());
         }
-        CommonUtils.LogToSystemOut("move object finally");
+        CommonUtils.logToSystemOut("move object finally");
         return s3HelperResponse;
     }
 
     @Override
     public S3HelperResponse deleteObject() {
         s3HelperResponse.setHasError(false);
-        CommonUtils.LogToSystemOut(String.format("Deleting: %s/%s", s3HelperRequest.getFromBucket(), s3HelperRequest.getFromKey()));
+        CommonUtils.logToSystemOut(String.format("Deleting: %s/%s", s3HelperRequest.getFromBucket(), s3HelperRequest.getFromPrefix()));
         S3Client s3 = getS3();
         DeleteObjectRequest deleteRequest = DeleteObjectRequest.builder()
                 .bucket(s3HelperRequest.getFromBucket())
-                .key(s3HelperRequest.getFromKey())
+                .key(s3HelperRequest.getFromPrefix())
                 .build();
         try {
             s3.deleteObject(deleteRequest);
         } catch (S3Exception e) {
             s3HelperResponse.setHasError(true);
-            s3HelperResponse.addStatusMessage(String.format("deleteObject: %s:%s", e.awsErrorDetails().errorMessage(), s3HelperRequest.toString()));
-            System.err.println(e.awsErrorDetails().errorMessage());
+            s3HelperResponse.addStatusMessage(String.format("deleteObject: %s:%s", e.awsErrorDetails().errorMessage(), s3HelperRequest));
+            CommonUtils.logErrorToSystemOut(e.awsErrorDetails().errorMessage());
         }
-        CommonUtils.LogToSystemOut("delete object finally");
+        CommonUtils.logToSystemOut("delete object finally");
         return s3HelperResponse;
     }
 
     @Override
     public S3HelperResponse readObject() {
         s3HelperResponse.setHasError(false);
-        CommonUtils.LogToSystemOut("Inside read object");
+        CommonUtils.logToSystemOut("Inside read object");
         s3HelperResponse.setOriginalRequest(s3HelperRequest);
-        GetObjectRequest req = GetObjectRequest.builder().bucket(s3HelperRequest.getFromBucket()).key(s3HelperRequest.getFromKey()).build();
-        CommonUtils.LogToSystemOut("object request created");
+        GetObjectRequest req = GetObjectRequest.builder().bucket(s3HelperRequest.getFromBucket()).key(s3HelperRequest.getFromPrefix()).build();
+        CommonUtils.logToSystemOut("object request created");
         ResponseInputStream<GetObjectResponse> s3objectResponse = getS3().getObject(req);
         BufferedReader reader = new BufferedReader(new InputStreamReader(s3objectResponse));
 
         InputStream targetStream = new ReaderInputStream(reader, Charsets.UTF_8);
-        CommonUtils.LogToSystemOut("created s3 and got response");
+        CommonUtils.logToSystemOut("created s3 and got response");
         s3HelperResponse.setObjectStream(targetStream);
         return s3HelperResponse;
     }
 
     public S3HelperResponse saveFileLocally() {
+        try {
         s3HelperResponse.setHasError(false);
-        CommonUtils.LogToSystemOut("Inside DOWNLOAD object");
+        CommonUtils.logToSystemOut("Inside DOWNLOAD object");
         s3HelperResponse.setOriginalRequest(s3HelperRequest);
-        GetObjectRequest req = GetObjectRequest.builder().bucket(s3HelperRequest.getFromBucket()).key(s3HelperRequest.getFromKey()).build();
-        CommonUtils.LogToSystemOut("DOWNLOAD object request created");
+        GetObjectRequest req = GetObjectRequest.builder().bucket(s3HelperRequest.getFromBucket()).key(s3HelperRequest.getFromPrefix()).build();
+        CommonUtils.logToSystemOut("DOWNLOAD object request created");
         ResponseInputStream<GetObjectResponse> s3objectResponse = getS3().getObject(req);
         String localFilePath = String.format("/tmp/%s", s3HelperRequest.getFileName());
-        CommonUtils.LogToSystemOut(String.format("LOCAL FILE NAME: %s", localFilePath));
-        try {
+        CommonUtils.logToSystemOut(String.format("LOCAL FILE NAME: %s", localFilePath));
             File file = new File(localFilePath);
             IOUtils.copy(s3objectResponse, new FileOutputStream(file));
+            File localFile = new File(localFilePath);
+            if (localFile.exists()) {
+                CommonUtils.logToSystemOut(String.format("local file %s FOUND", localFilePath));
+                s3HelperResponse.setLocalFilePath(localFilePath);
+            } else {
+                s3HelperResponse.setHasError(true);
+                CommonUtils.logErrorToSystemOut(String.format("ERROR: Unable to download file locally. Local file %s NOT FOUND", localFilePath));
+            }
         } catch (Exception e) {
-            e.printStackTrace();
+            s3HelperResponse.setHasError(true);
+            CommonUtils.logErrorToSystemOut(String.format("ERROR: Unable to download file locally. %s", e.getMessage()));
         }
-        File localFile = new File(localFilePath);
-        if (localFile.exists()) {
-            CommonUtils.LogToSystemOut(String.format("local file %s FOUND", localFilePath));
-            s3HelperResponse.setLocalFilePath(localFilePath);
-        } else
-            CommonUtils.LogToSystemOut(String.format("ERROR ERROR ERROR local file %s NOT FOUND", localFilePath));
         return s3HelperResponse;
     }
 

@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS monitor.source_file_lookup
     source_id integer,
     raw_file_name  character varying COLLATE pg_catalog."default",
     bucket  character varying COLLATE pg_catalog."default",
-    prefix character varying COLLATE pg_catalog."default",
+    target_prefix character varying COLLATE pg_catalog."default",
     ingestion_status_id integer,
     record_timestamp timestamp without time zone DEFAULT current_timestamp,
     status_message character varying,

@@ -1,12 +1,14 @@
-package com.mydata.entity;
+package com.mydata.s3;
+
+import com.mydata.common.GlobalConstant;
 
 import java.io.InputStream;
 
 public class S3HelperRequest {
     private String fromBucket;
-    private String fromKey;
+    private String fromPrefix;
     private String toBucket;
-    private String toKey;
+    private String toPrefix;
     private InputStream objectStream;
     private String fileName;
     private GlobalConstant.SOURCE_KEY sourceTypeKey;
@@ -19,12 +21,12 @@ public class S3HelperRequest {
         this.fromBucket = fromBucket;
     }
 
-    public String getFromKey() {
-        return fromKey;
+    public String getFromPrefix() {
+        return fromPrefix;
     }
 
-    public void setFromKey(String fromKey) {
-        this.fromKey = fromKey;
+    public void setFromPrefix(String fromPrefix) {
+        this.fromPrefix = fromPrefix;
     }
 
     public String getToBucket() {
@@ -35,12 +37,12 @@ public class S3HelperRequest {
         this.toBucket = toBucket;
     }
 
-    public String getToKey() {
-        return toKey;
+    public String getToPrefix() {
+        return toPrefix;
     }
 
-    public void setToKey(String toKey) {
-        this.toKey = toKey;
+    public void setToPrefix(String toPrefix) {
+        this.toPrefix = toPrefix;
     }
 
     public InputStream getObjectStream() {
@@ -90,6 +92,6 @@ public class S3HelperRequest {
      */
     @Override
     public String toString() {
-        return String.format("From Bucket: %s. From Key: %s. ToBucket: %s. ToKey:%s FileName: %s SourceTypeKey: %s", fromBucket, fromKey, toBucket, toKey, fileName, sourceTypeKey.toString());
+        return String.format("From Bucket: %s. From Prefix: %s. ToBucket: %s. To Prefix:%s FileName: %s SourceTypeKey: %s", fromBucket, fromPrefix, toBucket, toPrefix, fileName, sourceTypeKey.toString());
     }
 }

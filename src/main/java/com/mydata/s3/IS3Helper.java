@@ -1,6 +1,4 @@
-package com.mydata.helper;
-
-import com.mydata.entity.S3HelperResponse;
+package com.mydata.s3;
 
 public interface IS3Helper {
     S3HelperResponse moveObject();

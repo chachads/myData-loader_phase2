@@ -1,4 +1,4 @@
-package com.mydata.entity;
+package com.mydata.s3;
 
 import java.io.InputStream;
 import java.util.ArrayList;

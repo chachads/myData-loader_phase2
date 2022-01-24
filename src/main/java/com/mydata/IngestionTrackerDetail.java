@@ -1,24 +1,24 @@
-package com.mydata.entity.tracker;
+package com.mydata;
 
-import com.mydata.entity.GlobalConstant;
+import com.mydata.common.GlobalConstant;
 
 import java.sql.Timestamp;
 
 public class IngestionTrackerDetail {
     private Long sourceTrackerId;
-    private String sourceKey;
-    private String rawFileName;
-    private String sourceBucket;
-    private String sourcePrefix;
-    private String targetBucket;
-    private String targetPrefix;
+    private final String sourceKey;
+    private final String rawFileName;
+    private final String sourceBucket;
+    private final String sourcePrefix;
+    private final String targetBucket;
+    private final String targetPrefix;
     private String stageDBTable;
     private Integer insertRowCount;
-    private Timestamp lambdaEventTriggerTime;
+    private final Timestamp lambdaEventTriggerTime;
     private Timestamp stageWriteTime;
     private Timestamp warehouseWriteTime;
     private Timestamp rdzWriteTime;
-    private GlobalConstant.SOURCE_TYPE sourceType;
+    private final GlobalConstant.SOURCE_TYPE sourceType;
     private GlobalConstant.INGESTION_STATUS eIngestionStatus;
     private String statusMessage;
 
@@ -33,6 +33,7 @@ public class IngestionTrackerDetail {
         this.stageDBTable = stageDBTable;
         this.eIngestionStatus = eIngestionStatus;
         this.lambdaEventTriggerTime = new Timestamp(System.currentTimeMillis());
+        this.statusMessage = eIngestionStatus.statusMessage;
     }
 
     public String getSourceKey() {
@@ -63,18 +64,18 @@ public class IngestionTrackerDetail {
         return targetBucket;
     }
 
+    /**
+     * Gets target prefix. If ingestion status id < 0 i.e. failure, always replace rdz with err.
+     *
+     * @return - Target prefix.
+     */
     public String getTargetPrefix() {
-        return targetPrefix;
+        return eIngestionStatus.ingestionId < 0 ? targetPrefix.replace("rdz", "err") : targetPrefix;
     }
 
     public Timestamp getLambdaEventTriggerTime() {
         return lambdaEventTriggerTime;
     }
-
-    public void setLambdaEventTriggerTime(Timestamp lambdaEventTriggerTime) {
-        this.lambdaEventTriggerTime = lambdaEventTriggerTime;
-    }
-
 
     public Timestamp getRdzWriteTime() {
         return rdzWriteTime;
@@ -94,10 +95,6 @@ public class IngestionTrackerDetail {
 
     public GlobalConstant.SOURCE_TYPE getSourceType() {
         return sourceType;
-    }
-
-    public void setSourceType(GlobalConstant.SOURCE_TYPE sourceType) {
-        this.sourceType = sourceType;
     }
 
     public Integer getInsertRowCount() {
@@ -124,20 +121,19 @@ public class IngestionTrackerDetail {
         this.warehouseWriteTime = warehouseWriteTime;
     }
 
-    public GlobalConstant.INGESTION_STATUS geteIngestionStatus() {
-        return eIngestionStatus;
-    }
-
-    public void seteIngestionStatus(GlobalConstant.INGESTION_STATUS eIngestionStatus) {
+    public void setEIngestionStatus(GlobalConstant.INGESTION_STATUS eIngestionStatus) {
         this.eIngestionStatus = eIngestionStatus;
+        // Change the status message when the ingestion status is updated.
     }
 
-    public Integer getIngestionStatus() {
-        return eIngestionStatus.getValue();
+    public Integer getIngestionStatusId() {
+        return eIngestionStatus.ingestionId;
     }
+
 
     public String getStatusMessage() {
-        return statusMessage;
+
+        return String.format("%s:%s", eIngestionStatus.statusMessage, statusMessage);
     }
 
     public void setStatusMessage(String statusMessage) {

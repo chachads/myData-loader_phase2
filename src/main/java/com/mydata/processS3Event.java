@@ -1,17 +1,13 @@
-package com.mydata.impl.lambda;
+package com.mydata;
 
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.S3Event;
-import com.mydata.entity.GlobalConstant;
-import com.mydata.entity.S3HelperResponse;
-import com.mydata.entity.SourceFieldParameter;
-import com.mydata.entity.domain.IngestSourceDetail;
-import com.mydata.entity.tracker.IngestionTrackerDetail;
-import com.mydata.helper.CommonUtils;
-import com.mydata.helper.DBConnection;
-import com.mydata.helper.IS3Helper;
-import com.mydata.helper.S3Helper;
+import com.mydata.common.CommonUtils;
+import com.mydata.common.GlobalConstant;
+import com.mydata.s3.IS3Helper;
+import com.mydata.s3.S3Helper;
+import com.mydata.s3.S3HelperResponse;
 import com.opencsv.CSVParser;
 import com.opencsv.CSVParserBuilder;
 import com.opencsv.CSVReader;
@@ -28,18 +24,17 @@ import java.sql.*;
 import java.util.*;
 
 public class processS3Event implements RequestHandler<S3Event, Object> {
-
     static Connection dbConnection;
 
     public Object handleRequest(S3Event s3Event, Context context) {
         String s3Bucket = s3Event.getRecords().get(0).getS3().getBucket().getName();
         String s3Key = s3Event.getRecords().get(0).getS3().getObject().getKey();
-        CommonUtils.LogToSystemOut(String.format("Bucket: %s. Key: %s", s3Bucket, s3Key));
+        CommonUtils.logToSystemOut(String.format("Bucket: %s. Key: %s", s3Bucket, s3Key));
         IngestSourceDetail ingestSourceDetail = new IngestSourceDetail(s3Key, s3Bucket);
         try {
-            if (Objects.isNull(dbConnection)) {
+            if (Objects.isNull(dbConnection) || dbConnection.isClosed()) {
                 try {
-                    HashMap<GlobalConstant.DB_CONNECTION_KEY, String> connectionDetail = DBConnection.getConnectionDetail();
+                    HashMap<GlobalConstant.DB_CONNECTION_KEY, String> connectionDetail = CommonUtils.getConnectionDetail();
                     if (!Objects.isNull(connectionDetail))
                         dbConnection = DriverManager.getConnection(connectionDetail.get(GlobalConstant.DB_CONNECTION_KEY.DB_CONNECTION_STRING), connectionDetail.get(GlobalConstant.DB_CONNECTION_KEY.DB_UID), connectionDetail.get(GlobalConstant.DB_CONNECTION_KEY.DB_PWD));
                     else
@@ -54,6 +49,7 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
             refreshSourceDefinition(ingestSourceDetail);
             List<SourceFieldParameter> paramList = readStageTableDef(ingestSourceDetail);
             String paramQueryString = getParamQueryStringBySource(paramList.size());
+            String etlBatchId = "t" + UUID.randomUUID().toString().replace("-", "");
 
             Integer rowCount = 0;
             Integer batchSize = 1000;
@@ -62,89 +58,122 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
 
             IS3Helper s3 = new S3Helper(ingestSourceDetail.getS3HelperRequest());
             S3HelperResponse s3HelperResponse = s3.saveFileLocally();
-            String etlBatchId = "t" + UUID.randomUUID().toString().replace("-", "");
-            File localFile = new File(s3HelperResponse.getLocalFilePath());
-            String etlFileName = localFile.exists() ? localFile.getName() : "error";
-            CommonUtils.LogToSystemOut(String.format("ETL FILE NAME IS %s", etlFileName));
-            switch (ingestSourceDetail.getSourceFormat()) {
-                case "CSV":
-                    BufferedReader reader = new BufferedReader(new FileReader(s3HelperResponse.getLocalFilePath()));
-                    CSVParser parser = new CSVParserBuilder().withSeparator(',').withIgnoreQuotations(true).build();
-                    CSVReader csvReader = new CSVReaderBuilder(reader).withSkipLines(1).withCSVParser(parser).build();
-                    String[] line;
-                    boolean openBatch = false;
-                    while ((line = csvReader.readNext()) != null) {
-                        rowCount++;
-                        openBatch = true;
-                        createPreparedStatement(preparedStatement, ingestSourceDetail.getSourceFormat(), line, paramList, etlBatchId, etlFileName, ingestSourceDetail.getDbSourceId(), rowCount);
-                        preparedStatement.addBatch();
-                        if (rowCount % batchSize == 0) {
-                            CommonUtils.LogToSystemOut(String.format("COMMITTING BATCH. Row Count: %d", rowCount));
-                            int[] rowsInserted = preparedStatement.executeBatch();
-                            CommonUtils.LogToSystemOut(String.format("COMMITTING BATCH. Row Count: %d. Execute Status: %d", rowCount, rowsInserted.length));
-                            openBatch = false;
-                        }
-                    }
-                    if (openBatch) {
-                        int[] rowsInserted = preparedStatement.executeBatch();
-                        CommonUtils.LogToSystemOut(String.format("COMMITTING BATCH. Row Count: %d. Execute Status: %d", rowCount, rowsInserted.length));
-                    }
-                    //update stage complete status
-                    ingestSourceDetail.getIngestionTrackerDetail().seteIngestionStatus(GlobalConstant.INGESTION_STATUS.STAGE_WRITE_COMPLETE);
-                    ingestSourceDetail.getIngestionTrackerDetail().setStageWriteTime(new Timestamp(System.currentTimeMillis()));
-                    ingestSourceDetail.getIngestionTrackerDetail().setInsertRowCount(rowCount);
-                    logSourceTrackerIU(ingestSourceDetail.getIngestionTrackerDetail());
-                    CommonUtils.LogToSystemOut("MOVING TO STAGE");
-                    PreparedStatement moveToStage = dbConnection.prepareStatement(String.format("select * from lookup.f_process_stage_opera('%s');", etlBatchId));
-                    CommonUtils.LogToSystemOut(moveToStage.toString());
-                    moveToStage.execute();
-                    // update move to warehouse completed
-                    ingestSourceDetail.getIngestionTrackerDetail().seteIngestionStatus(GlobalConstant.INGESTION_STATUS.WAREHOUSE_WRITE_COMPLETE);
-                    ingestSourceDetail.getIngestionTrackerDetail().setWarehouseWriteTime(new Timestamp(System.currentTimeMillis()));
-                    logSourceTrackerIU(ingestSourceDetail.getIngestionTrackerDetail());
-                    CommonUtils.LogToSystemOut("closing readers");
-                    reader.close();
-                    csvReader.close();
-                    break;
-                case "JSON":
-                    JSONParser jsonParser = new JSONParser();
-                    JSONArray jarray = (JSONArray) jsonParser.parse(new FileReader(s3HelperResponse.getLocalFilePath()));
-                    CommonUtils.LogToSystemOut(String.format("JSON ARRAY PARSED FROM %s with size %d", s3HelperResponse.getLocalFilePath(), jarray.size()));
-                    for (Object object : jarray) {
-                        rowCount++;
-                        createPreparedStatement(preparedStatement, ingestSourceDetail.getSourceFormat(), object, paramList, etlBatchId, etlFileName, ingestSourceDetail.getDbSourceId(), rowCount);
-                        preparedStatement.addBatch();
-                        if (rowCount % batchSize == 0 || rowCount == jarray.size()) {
-                            CommonUtils.LogToSystemOut(String.format("COMMITTING BATCH. Row Count: %d", rowCount));
-                            int[] rowsInserted = preparedStatement.executeBatch();
-                            CommonUtils.LogToSystemOut(String.format("COMMITTING BATCH. Row Count: %d. Execute Status: %d", rowCount, rowsInserted.length));
-                        }
-                    }
-                    //update stage complete status
-                    ingestSourceDetail.getIngestionTrackerDetail().seteIngestionStatus(GlobalConstant.INGESTION_STATUS.STAGE_WRITE_COMPLETE);
-                    ingestSourceDetail.getIngestionTrackerDetail().setStageWriteTime(new Timestamp(System.currentTimeMillis()));
-                    ingestSourceDetail.getIngestionTrackerDetail().setInsertRowCount(rowCount);
-                    logSourceTrackerIU(ingestSourceDetail.getIngestionTrackerDetail());
-                    break;
-            }
-            S3HelperResponse moveObjectResponse = s3.moveObject();
-            CommonUtils.LogToSystemOut(String.format("back from S3 MOVE OBJECT. %s. Status Message: %s",moveObjectResponse.getHasError(),moveObjectResponse.getStatusMessage()));
-            if (moveObjectResponse.getHasError()) {
-                ingestSourceDetail.getIngestionTrackerDetail().seteIngestionStatus(GlobalConstant.INGESTION_STATUS.RDZ_WRITE_FAILED);
+            if (s3HelperResponse.getHasError()) {
+                ingestSourceDetail.getIngestionTrackerDetail().setEIngestionStatus(GlobalConstant.INGESTION_STATUS.S3_STREAM_READ_FAILED);
+                moveFileToErrorDZ(ingestSourceDetail);
+                logSourceTrackerIU(ingestSourceDetail.getIngestionTrackerDetail());
             } else {
-                ingestSourceDetail.getIngestionTrackerDetail().setRdzWriteTime(new Timestamp(System.currentTimeMillis()));
-                ingestSourceDetail.getIngestionTrackerDetail().seteIngestionStatus(GlobalConstant.INGESTION_STATUS.RDZ_WRITE_COMPLETE);
+                Boolean stageWriteFailed = false;
+                try {
+                    File localFile = new File(s3HelperResponse.getLocalFilePath());
+                    String etlFileName = localFile.exists() ? localFile.getName() : "error";
+                    CommonUtils.logToSystemOut(String.format("ETL FILE NAME IS %s", etlFileName));
+                    switch (ingestSourceDetail.getSourceFormat()) {
+                        case "CSV":
+                            BufferedReader reader = new BufferedReader(new FileReader(s3HelperResponse.getLocalFilePath()));
+                            CSVParser parser = new CSVParserBuilder().withSeparator(',').withIgnoreQuotations(true).build();
+                            CSVReader csvReader = new CSVReaderBuilder(reader).withSkipLines(1).withCSVParser(parser).build();
+                            String[] line;
+                            boolean openBatch = false;
+                            while ((line = csvReader.readNext()) != null) {
+                                rowCount++;
+                                openBatch = true;
+                                createPreparedStatement(preparedStatement, ingestSourceDetail.getSourceFormat(), line, paramList, etlBatchId, etlFileName, ingestSourceDetail.getDbSourceId(), rowCount);
+                                preparedStatement.addBatch();
+                                if (rowCount % batchSize == 0) {
+                                    CommonUtils.logToSystemOut(String.format("COMMITTING BATCH. Row Count: %d", rowCount));
+                                    int[] rowsInserted = preparedStatement.executeBatch();
+                                    CommonUtils.logToSystemOut(String.format("COMMITTING BATCH. Row Count: %d. Execute Status: %d", rowCount, rowsInserted.length));
+                                    openBatch = false;
+                                }
+                            }
+                            if (openBatch) {
+                                int[] rowsInserted = preparedStatement.executeBatch();
+                                CommonUtils.logToSystemOut(String.format("COMMITTING BATCH. Row Count: %d. Execute Status: %d", rowCount, rowsInserted.length));
+                            }
+                            reader.close();
+                            csvReader.close();
+                            break;
+                        case "JSON":
+                            JSONParser jsonParser = new JSONParser();
+                            JSONArray jarray = (JSONArray) jsonParser.parse(new FileReader(s3HelperResponse.getLocalFilePath()));
+                            CommonUtils.logToSystemOut(String.format("JSON ARRAY PARSED FROM %s with size %d", s3HelperResponse.getLocalFilePath(), jarray.size()));
+                            for (Object object : jarray) {
+                                rowCount++;
+                                createPreparedStatement(preparedStatement, ingestSourceDetail.getSourceFormat(), object, paramList, etlBatchId, etlFileName, ingestSourceDetail.getDbSourceId(), rowCount);
+                                preparedStatement.addBatch();
+                                if (rowCount % batchSize == 0 || rowCount == jarray.size()) {
+                                    CommonUtils.logToSystemOut(String.format("COMMITTING BATCH. Row Count: %d", rowCount));
+                                    int[] rowsInserted = preparedStatement.executeBatch();
+                                    CommonUtils.logToSystemOut(String.format("COMMITTING BATCH. Row Count: %d. Execute Status: %d", rowCount, rowsInserted.length));
+                                }
+                            }
+                            //update stage complete status
+                            break;
+                    }
+                } catch (Exception e) {
+                    stageWriteFailed = true;
+                    CommonUtils.logErrorToSystemOut(e.getMessage());
+                }
+                if (stageWriteFailed) {
+                    ingestSourceDetail.getIngestionTrackerDetail().setEIngestionStatus(GlobalConstant.INGESTION_STATUS.STAGE_WRITE_FAILED);
+                    logSourceTrackerIU(ingestSourceDetail.getIngestionTrackerDetail());
+                    moveFileToErrorDZ(ingestSourceDetail);
+
+                } else {
+                    ingestSourceDetail.getIngestionTrackerDetail().setEIngestionStatus(GlobalConstant.INGESTION_STATUS.STAGE_WRITE_COMPLETE);
+                    ingestSourceDetail.getIngestionTrackerDetail().setStageWriteTime(new Timestamp(System.currentTimeMillis()));
+                    ingestSourceDetail.getIngestionTrackerDetail().setInsertRowCount(rowCount);
+                    logSourceTrackerIU(ingestSourceDetail.getIngestionTrackerDetail());
+                    Boolean warehouseWriteFailed = false;
+                    if (!Objects.isNull(ingestSourceDetail.getWarehouseFunctionName())) {
+                        try {
+                            CommonUtils.logToSystemOut("MOVING TO WAREHOUSE");
+                            PreparedStatement moveToStage = dbConnection.prepareStatement(String.format("select * from %s('%s');", ingestSourceDetail.getWarehouseFunctionName(), etlBatchId));
+                            CommonUtils.logToSystemOut(moveToStage.toString());
+                            moveToStage.execute();
+                        } catch (Exception e) {
+                            warehouseWriteFailed = true;
+                            ingestSourceDetail.getIngestionTrackerDetail().setStatusMessage(e.getMessage());
+                        }
+                    } else {
+                        warehouseWriteFailed = true;
+                        ingestSourceDetail.getIngestionTrackerDetail().setStatusMessage("Warehouse Function name is null in lookup.lookup_source");
+                    }
+                    if (warehouseWriteFailed) {
+                        ingestSourceDetail.getIngestionTrackerDetail().setEIngestionStatus(GlobalConstant.INGESTION_STATUS.WAREHOUSE_WRITE_FAILED);
+                        logSourceTrackerIU(ingestSourceDetail.getIngestionTrackerDetail());
+                        moveFileToErrorDZ(ingestSourceDetail);
+                        CommonUtils.logToSystemOut("closing readers");
+
+                    } else {
+                        ingestSourceDetail.getIngestionTrackerDetail().setEIngestionStatus(GlobalConstant.INGESTION_STATUS.WAREHOUSE_WRITE_COMPLETE);
+                        ingestSourceDetail.getIngestionTrackerDetail().setWarehouseWriteTime(new Timestamp(System.currentTimeMillis()));
+                        logSourceTrackerIU(ingestSourceDetail.getIngestionTrackerDetail());
+                        CommonUtils.logToSystemOut("closing readers");
+
+                        S3HelperResponse moveObjectResponse = s3.moveObject();
+                        CommonUtils.logToSystemOut(String.format("back from S3 MOVE OBJECT. %s. Status Message: %s", moveObjectResponse.getHasError(), moveObjectResponse.getStatusMessage()));
+                        if (moveObjectResponse.getHasError()) {
+                            ingestSourceDetail.getIngestionTrackerDetail().setEIngestionStatus(GlobalConstant.INGESTION_STATUS.RDZ_WRITE_FAILED);
+                            moveFileToErrorDZ(ingestSourceDetail);
+                        } else {
+                            ingestSourceDetail.getIngestionTrackerDetail().setRdzWriteTime(new Timestamp(System.currentTimeMillis()));
+                            ingestSourceDetail.getIngestionTrackerDetail().setEIngestionStatus(GlobalConstant.INGESTION_STATUS.RDZ_WRITE_COMPLETE);
+                        }
+                        ingestSourceDetail.setStatusMessage(moveObjectResponse.getStatusMessage());
+                        ingestSourceDetail.getIngestionTrackerDetail().setStatusMessage(moveObjectResponse.getStatusMessage());
+                        CommonUtils.logToSystemOut("going to log source tracker");
+                        logSourceTrackerIU(ingestSourceDetail.getIngestionTrackerDetail());
+                        // Now mark entire request as completed
+                        ingestSourceDetail.setStatusMessage("Ingestion Complete");
+                        ingestSourceDetail.getIngestionTrackerDetail().setStatusMessage("Ingestion Complete");
+                        ingestSourceDetail.getIngestionTrackerDetail().setEIngestionStatus(GlobalConstant.INGESTION_STATUS.INGESTION_COMPLETE);
+                        logSourceTrackerIU(ingestSourceDetail.getIngestionTrackerDetail());
+                        CommonUtils.logToSystemOut("END - WRITING STREAM TO DB");
+                    }
+                }
             }
-            ingestSourceDetail.setStatusMessage(moveObjectResponse.getStatusMessage());
-            ingestSourceDetail.getIngestionTrackerDetail().setStatusMessage(moveObjectResponse.getStatusMessage());
-            CommonUtils.LogToSystemOut("going to log source tracker");
-            logSourceTrackerIU(ingestSourceDetail.getIngestionTrackerDetail());
-            // Now mark entire request as completed
-            ingestSourceDetail.setStatusMessage("Ingestion Complete");
-            ingestSourceDetail.getIngestionTrackerDetail().setStatusMessage("Ingestion Complete");
-            ingestSourceDetail.getIngestionTrackerDetail().seteIngestionStatus(GlobalConstant.INGESTION_STATUS.INGESTION_COMPLETE);
-            logSourceTrackerIU(ingestSourceDetail.getIngestionTrackerDetail());
-            CommonUtils.LogToSystemOut("END - WRITING STREAM TO DB");
         } catch (Exception e) {
             e.printStackTrace();
         } finally {
@@ -153,9 +182,8 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
         return null;
     }
 
-
     public static void refreshSourceDefinition(IngestSourceDetail ingestSourceDetail) throws SQLException {
-        CommonUtils.LogToSystemOut("INSIDE GET SOURCE DETAIL");
+        CommonUtils.logToSystemOut("INSIDE GET SOURCE DETAIL");
         final String sourceDefintionSelectSQL = "SELECT * from lookup.f_lookup_source('%s')";
         PreparedStatement sourceSelection = dbConnection.prepareStatement(String.format(sourceDefintionSelectSQL, ingestSourceDetail.getSourceKey()));
         ResultSet rs = sourceSelection.executeQuery();
@@ -167,8 +195,10 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
             ingestSourceDetail.setSourceFormat(rs.getString("source_format"));
             ingestSourceDetail.setDbSourceId(rs.getInt("internal_source_id"));
             ingestSourceDetail.setSourceDateFormat(rs.getString("source_date_format"));
+            ingestSourceDetail.setSourceTimeStampFormat(rs.getString("source_timestamp_format"));
+            ingestSourceDetail.setWarehouseFunctionName(rs.getString("warehouse_function_name"));
         }
-        CommonUtils.LogToSystemOut(ingestSourceDetail.toString());
+        CommonUtils.logToSystemOut(ingestSourceDetail.toString());
     }
 
     protected static List<SourceFieldParameter> readStageTableDef(IngestSourceDetail ingestSourceDetail) throws SQLException {
@@ -195,12 +225,13 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
                     break;
                 case "timestamp without time zone":
                     p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.TIMESTAMP);
+                    p.setTimestampFormat(ingestSourceDetail.getSourceTimeStampFormat());
                     break;
                 case "integer":
                     p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.INTEGER);
                     break;
                 case "numeric":
-                    p.setParameterType(numericPrecision == null ? GlobalConstant.PSQL_PARAMETER_TYPE.INTEGER : GlobalConstant.PSQL_PARAMETER_TYPE.DOUBLE);
+                    p.setParameterType(Objects.isNull(numericPrecision) ? GlobalConstant.PSQL_PARAMETER_TYPE.INTEGER : GlobalConstant.PSQL_PARAMETER_TYPE.DOUBLE);
                     break;
                 case "bigint":
                     p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.BIGINT);
@@ -209,8 +240,6 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
                     p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.BOOLEAN);
             }
             paramList.add(p);
-
-            //                    add(new SourceFieldParameter(SOURCE_KEY.ONQ_PMSLEDGER, "etl_batch_id", PSQL_PARAMETER_TYPE.CHARACTER_VARYING, null, 1, true));
         }
         return paramList;
     }
@@ -225,7 +254,6 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
         Arrays.fill(paramList, "?");
         return String.join(",", paramList);
     }
-
 
     protected static void createPreparedStatement(PreparedStatement preparedStatement, String sourceFormat, Object inputRecord, List<SourceFieldParameter> sourceFieldParameterList, String etlBatchId, String etlFileName, Integer sourceId, Integer lineNumber) {
         JSONObject jsonRecord = null;
@@ -370,10 +398,10 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
                         } else {
                             switch (sourceFormat) {
                                 case "CSV":
-                                    fieldTimeStampValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > p.getParameterOrder()) ? CommonUtils.getSQLTimestamp(lambdaCSVRecord[p.getParameterOrder() - 1]) : null;
+                                    fieldTimeStampValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > p.getParameterOrder()) ? CommonUtils.getSQLTimestamp(lambdaCSVRecord[p.getParameterOrder() - 1], p.getTimestampFormat()) : null;
                                     break;
                                 case "JSON":
-                                    fieldTimeStampValue = (lambdaJSONRecord != null && lambdaJSONRecord.containsKey(p.getParameterName()) && lambdaJSONRecord.get(p.getParameterName()) != null ? CommonUtils.getSQLTimestamp(lambdaJSONRecord.get(p.getParameterName()).toString()) : null);
+                                    fieldTimeStampValue = (lambdaJSONRecord != null && lambdaJSONRecord.containsKey(p.getParameterName()) && lambdaJSONRecord.get(p.getParameterName()) != null ? CommonUtils.getSQLTimestamp(lambdaJSONRecord.get(p.getParameterName()).toString(), p.getTimestampFormat()) : null);
                                     break;
                             }
                         }
@@ -385,7 +413,7 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
                 }
 
             } catch (SQLException e) {
-                CommonUtils.LogToSystemOut(String.format("Line Number: %d. Column: %s", lineNumber, p));
+                CommonUtils.logErrorToSystemOut(String.format("Line Number: %d. Column: %s", lineNumber, p));
                 e.printStackTrace();
             }
         });
@@ -393,7 +421,6 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
         //      CommonUtils.LogToSystemOut(preparedStatement.toString());
 
     }
-
 
     public static void logSourceTrackerIU(IngestionTrackerDetail ingestionTrackerDetail) {
         try {
@@ -470,10 +497,10 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
             else
                 sourceTrackerIU.setTimestamp(iParam, ingestionTrackerDetail.getRdzWriteTime());
             iParam++;
-            if (Objects.isNull(ingestionTrackerDetail.getIngestionStatus()))
+            if (Objects.isNull(ingestionTrackerDetail.getIngestionStatusId()))
                 sourceTrackerIU.setNull(iParam, Types.INTEGER);
             else
-                sourceTrackerIU.setInt(iParam, ingestionTrackerDetail.getIngestionStatus());
+                sourceTrackerIU.setInt(iParam, ingestionTrackerDetail.getIngestionStatusId());
             iParam++;
             if (Objects.isNull(ingestionTrackerDetail.getStatusMessage()))
                 sourceTrackerIU.setNull(iParam, Types.VARCHAR);
@@ -482,32 +509,39 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
 
             ResultSet sourceTrackerIdResult = sourceTrackerIU.executeQuery();
             if (!Objects.isNull(sourceTrackerIdResult) && sourceTrackerIdResult.next()) {
-                CommonUtils.LogToSystemOut(String.format("Executing %s", sourceTrackerIU));
+                CommonUtils.logToSystemOut(String.format("Executing %s", sourceTrackerIU));
                 ingestionTrackerDetail.setSourceTrackerId(sourceTrackerIdResult.getLong(1));
             }
 
         } catch (Exception e) {
-            e.printStackTrace();
+            CommonUtils.logErrorToSystemOut(e.getMessage());
         }
     }
-    public static void logSourceFileLookup(IngestSourceDetail ingestSourceDetail) {
+
+    protected static void moveFileToErrorDZ(IngestSourceDetail ingestSourceDetail) {
+        String errToPrefix = ingestSourceDetail.getS3HelperRequest().getToPrefix().replace("rdz", "err");
+        ingestSourceDetail.getS3HelperRequest().setToPrefix(errToPrefix);
+        IS3Helper s3 = new S3Helper(ingestSourceDetail.getS3HelperRequest());
+        s3.moveObject();
+    }
+
+    protected static void logSourceFileLookup(IngestSourceDetail ingestSourceDetail) {
         try {
-            String logSourceLookupInsertSQL = "INSERT INTO monitor.source_file_lookup(source_id, raw_file_name, bucket, prefix, ingestion_status_id,status_message) VALUES (?, ?, ?, ?, ?, ?)";
+            String logSourceLookupInsertSQL = "INSERT INTO monitor.source_file_lookup(source_id, raw_file_name, bucket, target_prefix, ingestion_status_id,status_message) VALUES (?, ?, ?, ?, ?, ?)";
 
             PreparedStatement psSorceLookupInsert = dbConnection.prepareStatement(logSourceLookupInsertSQL);
             psSorceLookupInsert.setInt(1, ingestSourceDetail.getDbSourceId());
             psSorceLookupInsert.setString(2, ingestSourceDetail.getRawFileName());
             psSorceLookupInsert.setString(3, ingestSourceDetail.getS3HelperRequest().getToBucket());
-            psSorceLookupInsert.setString(4, ingestSourceDetail.getS3HelperRequest().getToKey());
-            psSorceLookupInsert.setInt(5, ingestSourceDetail.getIngestionTrackerDetail().getIngestionStatus());
+            psSorceLookupInsert.setString(4, ingestSourceDetail.getS3HelperRequest().getToPrefix());
+            psSorceLookupInsert.setInt(5, ingestSourceDetail.getIngestionTrackerDetail().getIngestionStatusId());
             psSorceLookupInsert.setString(6, ingestSourceDetail.getStatusMessage());
             psSorceLookupInsert.execute();
         } catch (Exception e) {
+            CommonUtils.logErrorToSystemOut(e.getMessage());
             e.printStackTrace();
         }
 
 
     }
-
-
 }

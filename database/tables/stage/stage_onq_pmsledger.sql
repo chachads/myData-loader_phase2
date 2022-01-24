@@ -38,7 +38,6 @@ CREATE TABLE IF NOT EXISTS stage.stage_onq_pmsledger
     house_key character varying COLLATE pg_catalog."default" null,
     include_in_net_use character varying COLLATE pg_catalog."default" null,
     inncode character varying COLLATE pg_catalog."default" null,
-    insert_datetime_utc timestamp without time zone null,
     ledger_entry_amount decimal null,
     original_folio_id bigint null,
     original_receipt_id bigint null,

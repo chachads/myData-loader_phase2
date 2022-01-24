@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS lookup.lookup_source
     stage_table_name character varying COLLATE pg_catalog."default",
     source_format character varying COLLATE pg_catalog."default",
     source_date_format character varying  COLLATE pg_catalog."default",
+    source_timestamp_format character varying  COLLATE pg_catalog."default",
+    warehouse_function_name character varying COLLATE pg_catalog."default",
     CONSTRAINT lookup_source_pkey PRIMARY KEY (internal_source_id)
 )
 

@@ -1,13 +1,15 @@
-package com.mydata.entity;
+package com.mydata;
+
+import com.mydata.common.GlobalConstant;
 
 public class SourceFieldParameter {
     GlobalConstant.SOURCE_KEY sourceKey;
     String parameterName;
     GlobalConstant.PSQL_PARAMETER_TYPE parameterType;
-    String precision;
     Integer parameterOrder;
     Boolean etlField;
     String dateFormat;
+    String timestampFormat;
 
     public SourceFieldParameter() {
     }
@@ -18,6 +20,14 @@ public class SourceFieldParameter {
 
     public void setDateFormat(String dateFormat) {
         this.dateFormat = dateFormat;
+    }
+
+    public String getTimestampFormat() {
+        return timestampFormat;
+    }
+
+    public void setTimestampFormat(String timestampFormat) {
+        this.timestampFormat = timestampFormat;
     }
 
     public void setSourceKey(GlobalConstant.SOURCE_KEY sourceKey) {
@@ -32,34 +42,12 @@ public class SourceFieldParameter {
         this.parameterType = parameterType;
     }
 
-    public void setPrecision(String precision) {
-        this.precision = precision;
-    }
-
     public void setParameterOrder(Integer parameterOrder) {
         this.parameterOrder = parameterOrder;
     }
 
     public void setEtlField(Boolean etlField) {
         this.etlField = etlField;
-    }
-
-    public SourceFieldParameter(GlobalConstant.SOURCE_KEY sourceKey, String parameterName, GlobalConstant.PSQL_PARAMETER_TYPE parameterType, String precision, Integer parameterOrder, Boolean etlField) {
-        this.sourceKey = sourceKey;
-        this.parameterName = parameterName;
-        this.parameterType = parameterType;
-        this.precision = precision;
-        this.parameterOrder = parameterOrder;
-        this.etlField = etlField;
-    }
-
-    public SourceFieldParameter(GlobalConstant.SOURCE_KEY sourceKey, String parameterName, GlobalConstant.PSQL_PARAMETER_TYPE parameterType, String precision, Integer parameterOrder) {
-        this.sourceKey = sourceKey;
-        this.parameterName = parameterName;
-        this.parameterType = parameterType;
-        this.precision = precision;
-        this.parameterOrder = parameterOrder;
-        this.etlField = false;
     }
 
     public String getParameterName() {
@@ -70,16 +58,9 @@ public class SourceFieldParameter {
         return parameterType;
     }
 
-
-    public String getPrecision() {
-        return precision;
-    }
-
-
     public Integer getParameterOrder() {
         return parameterOrder;
     }
-
 
     public GlobalConstant.SOURCE_KEY getSourceKey() {
         return sourceKey;
@@ -112,7 +93,7 @@ public class SourceFieldParameter {
      */
     @Override
     public String toString() {
-        return String.format("Source Key %s. parameterName: %s parameterType: %s precision %s parameterOrder: %d etlField %b", sourceKey.toString(), parameterName, parameterType.toString(), precision, parameterOrder, etlField);
+        return String.format("Source Key %s. parameterName: %s parameterType: %s parameterOrder: %d etlField %b", sourceKey.toString(), parameterName, parameterType.toString(), parameterOrder, etlField);
 
     }
 }
