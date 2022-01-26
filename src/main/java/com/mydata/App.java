@@ -26,10 +26,16 @@ public class App {
         }
     }
 
+    public static void debugS3Event(){
+        processS3Event e = new processS3Event();
+        establishDBConnection();
+        String filePath = "/Users/chachads/pocs/do/hg/STAY_Highgate_Hotels_20211217_20211217_1330.json";
+        String s3Key = "ldz/ONQ_CRSSTAY/STAY_Highgate_Hotels_20211217_20211217_1330.json";
+    }
     public static void main(String[] args) {
         CommonUtils.logToSystemOut("HW");
         String tsValue = "2021-12-15T20:19:10.000Z";
-        CommonUtils.getSQLTimestamp(tsValue, "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+        debugS3Event();
     }
 
     protected static void dateTest() {
@@ -48,7 +54,7 @@ public class App {
         stayDateList.forEach(d -> CommonUtils.logToSystemOut(d.toString()));
     }
 
-    protected static void createPreparedStatement(PreparedStatement preparedStatement, String sourceFormat, Object inputRecord, List<SourceFieldParameter> sourceFieldParameterList, String etlBatchId, String etlFileName, Integer sourceId, Integer lineNumber) {
+    protected static void createPreparedStatement(PreparedStatement preparedStatement, String sourceFormat, Object inputRecord, List<SourceFieldParameter> sourceFieldParameterList, Long etlBatchId, String etlFileName, Integer sourceId, Integer lineNumber) {
         JSONObject jsonRecord = null;
         String[] csvRecord = null;
         switch (sourceFormat) {
@@ -71,9 +77,7 @@ public class App {
                 switch (fieldType) {
                     case CHARACTER_VARYING:
                         if (p.getEtlField())
-                            if (p.getParameterName().equals(GlobalConstant.ETL_COLUMN_NAME.etl_batch_id.toString()))
-                                preparedStatement.setString(p.getParameterOrder(), etlBatchId);
-                            else if (p.getParameterName().equals(GlobalConstant.ETL_COLUMN_NAME.etl_file_name.toString()))
+                            if (p.getParameterName().equals(GlobalConstant.ETL_COLUMN_NAME.etl_file_name.toString()))
                                 preparedStatement.setString(p.getParameterOrder(), etlFileName);
                             else
                                 preparedStatement.setString(p.getParameterOrder(), "");
@@ -109,7 +113,8 @@ public class App {
                     case BIGINT:
                         Long fieldLongValue = null;
                         if (p.getEtlField())
-                            fieldLongValue = null;
+                            if (p.getParameterName().equals(GlobalConstant.ETL_COLUMN_NAME.etl_batch_id.toString()))
+                                preparedStatement.setLong(p.getParameterOrder(), etlBatchId);
                         else {
                             switch (sourceFormat) {
                                 case "CSV":

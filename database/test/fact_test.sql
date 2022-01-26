@@ -1,15 +1,15 @@
--- FUNCTION: monitor.f_check_row_count(character varying)
-CREATE SCHEMA IF NOT EXISTS monitor;
-DROP FUNCTION IF EXISTS monitor.f_check_row_count();
-CREATE OR REPLACE FUNCTION monitor.f_check_row_count()
-    RETURNS integer
-    LANGUAGE 'plpgsql'
-    COST 100
-    VOLATILE PARALLEL UNSAFE
-    ROWS 1000
+DROP TABLE IF EXISTS t_row_count;
+CREATE TEMPORARY TABLE t_row_count AS SELECT 'stage.stage_opera' table_name,COUNT(*) number_of_rows FROM stage.stage_opera;
+INSERT INTO t_row_count SELECT 'stage_onq_crsstay',COUNT(*) FROM stage.stage_onq_crsstay;
+INSERT INTO t_row_count SELECT 'stage_onq_pmsledger',COUNT(*) FROM stage.stage_onq_pmsledger;
 
-AS $BODY$
-BEGIN
-    PERFORM SELECT COUNT(*) FROM warehouse.reservation_stay_day_f;
-END;
-$BODY$;
+INSERT INTO t_row_count SELECT 'reservation_stay_date_f',COUNT(*) FROM warehouse.reservation_stay_date_f;
+INSERT INTO t_row_count SELECT 'reservation_business_date_f',COUNT(*) FROM warehouse.reservation_business_date_f;
+INSERT INTO t_row_count SELECT 'reservation_business_date_extension_f',COUNT(*) FROM warehouse.reservation_business_date_extension_f;
+INSERT INTO t_row_count SELECT 'lookup_property',COUNT(*) FROM lookup.lookup_property;
+INSERT INTO t_row_count SELECT 'lookup_reservation',COUNT(*) FROM lookup.lookup_reservation;
+
+
+select * from monitor.ingestion_tracker;
+select * from stage.stage_batch;
+SELECT * FROM t_row_count;

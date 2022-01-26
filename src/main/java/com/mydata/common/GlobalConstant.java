@@ -10,7 +10,7 @@ public interface GlobalConstant {
         DB_SECRETS_NAME,
         DB_CONNECTION_STRING
     }
-    String ENV_LOG_TO_SYSTEM_OUT = "ENV_LOG_TO_SYSTEM_OUT";
+    //String ENV_LOG_TO_SYSTEM_OUT = "ENV_LOG_TO_SYSTEM_OUT";
     enum SOURCE_KEY {
         OPERA,
         ONQ_CRSSTAY,
@@ -73,5 +73,7 @@ public interface GlobalConstant {
             return BY_STATUS_MESSAGE.get(statusMessage);
         }
     }
+    Boolean ENV_LOG_TO_SYSTEM_OUT = Boolean.parseBoolean(System.getenv("ENV_LOG_TO_SYSTEM_OUT"));
 
+    Boolean ENV_USE_CRON_TO_LOAD_WAREHOUSE = Boolean.parseBoolean(System.getenv("ENV_USE_CRON_TO_LOAD_WAREHOUSE"));
 }

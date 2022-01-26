@@ -5,7 +5,7 @@ DROP TABLE IF EXISTS stage.stage_opera_distinct CASCADE;
 CREATE TABLE IF NOT EXISTS stage.stage_opera_distinct
 (
     stage_id serial not null,
-    etl_batch_id character varying COLLATE pg_catalog."default",
+    etl_batch_id bigint,
     source_id integer,
     reservation_id character varying COLLATE pg_catalog."default",
     business_date date,

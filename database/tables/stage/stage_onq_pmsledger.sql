@@ -5,7 +5,7 @@ DROP TABLE IF EXISTS stage.stage_onq_pmsledger CASCADE;
 
 CREATE TABLE IF NOT EXISTS stage.stage_onq_pmsledger
 (
-    etl_batch_id character varying COLLATE pg_catalog."default" null,
+    etl_batch_id bigint,
     accounting_category character varying COLLATE pg_catalog."default" null,
     accounting_id character varying COLLATE pg_catalog."default" null,
     accounting_id_desc character varying COLLATE pg_catalog."default" null,
@@ -27,9 +27,9 @@ CREATE TABLE IF NOT EXISTS stage.stage_onq_pmsledger
     entry_datetime timestamp without time zone null,
     entry_id bigint null,
     entry_type character varying COLLATE pg_catalog."default" null,
-    exchange_rate decimal null,
+    exchange_rate decimal(38,10) null,
     facility_id character varying COLLATE pg_catalog."default" null,
-    foreign_amount decimal null,
+    foreign_amount decimal(38,10) null,
     gl_account_id character varying COLLATE pg_catalog."default" null,
     gnr character varying COLLATE pg_catalog."default" null,
     group_key character varying COLLATE pg_catalog."default" null,
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS stage.stage_onq_pmsledger
     house_key character varying COLLATE pg_catalog."default" null,
     include_in_net_use character varying COLLATE pg_catalog."default" null,
     inncode character varying COLLATE pg_catalog."default" null,
-    ledger_entry_amount decimal null,
+    ledger_entry_amount decimal(38,10) null,
     original_folio_id bigint null,
     original_receipt_id bigint null,
     original_stay_id bigint null,
@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS stage.stage_onq_pmsledger
     trans_id bigint null,
     trans_travel_reason_code character varying COLLATE pg_catalog."default" null,
     version character varying COLLATE pg_catalog."default" null,
+    source_id int,
     etl_file_name character varying COLLATE pg_catalog."default" null,
     etl_ingest_datetime timestamp without time zone
 )

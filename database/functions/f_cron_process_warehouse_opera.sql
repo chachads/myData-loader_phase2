@@ -1,10 +1,9 @@
--- FUNCTION: lookup.f_process_stage_opera(character varying)
+-- FUNCTION: lookup.f_cron_process_warehouse_opera(character varying)
 
-DROP FUNCTION IF EXISTS lookup.f_process_stage_opera(bigint);
+DROP FUNCTION IF EXISTS lookup.f_cron_process_warehouse_opera();
 CREATE SCHEMA IF NOT EXISTS lookup;
 
-CREATE OR REPLACE FUNCTION lookup.f_process_stage_opera(
-	etlBatchId bigint)
+CREATE OR REPLACE FUNCTION lookup.f_cron_process_warehouse_opera()
     RETURNS integer
     LANGUAGE 'plpgsql'
     COST 100
@@ -14,18 +13,89 @@ DECLARE rowCount integer;
 DECLARE propertyCode character varying;
 DECLARE sourceId integer;
 DECLARE partitionValue character varying;
+DECLARE partitionCount integer;
+DECLARE iPartition integer;
+DECLARE p record;
 BEGIN
-	/*
-	This routine works only for 1 file and one property at a time.
-	*/
-	SELECT UPPER(resort),source_id,CAST(business_date AS character varying) INTO propertyCode,sourceId,partitionValue FROM  stage.stage_opera WHERE (etl_batch_id = etlBatchId OR etlBatchId IS NULL);
-	-- Create partition for business date if needed.
-	PERFORM warehouse.f_create_table_partition('warehouse.reservation_stay_date_f',partitionValue);
-	PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_f',partitionValue);
-	PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_extension_f',partitionValue);
-	PERFORM lookup.f_lookup_reservation_iu(etlBatchId,sourceId);
+    SELECT
+        internal_source_id INTO sourceId
+    FROM
+        lookup.lookup_source
+    WHERE
+        source_key = 'OPERA';
+    -- temp work table for this function. Gather all batches where source id matches opera, stage is completed and warehouse is not completed and warehouse timestamp is null.
+	DROP TABLE IF EXISTS t_stage_to_warehouse_opera;
+	CREATE TEMPORARY TABLE t_stage_to_warehouse_opera AS
+	SELECT
+		o.*,
+		-1 internal_reservation_id,
+		-1 internal_property_id
+	FROM
+		stage.stage_batch b
+		JOIN stage.stage_opera o ON o.etl_batch_id = b.batch_id
+	WHERE
+		b.source_id = sourceId
+		AND b.stage_completed_ind = true
+		AND b.warehouse_completed_ind = false
+		AND b.warehouse_transfer_start_timestamp IS NULL;
+    -- mark these records as picked up so that another run does not pick it.
+	UPDATE
+		stage.stage_batch b
+	SET
+		warehouse_transfer_start_timestamp = current_timestamp
+	FROM
+		t_stage_to_warehouse_opera o
+	WHERE
+		o.etl_batch_id = b.batch_id;
+    -- START - GET internal reservation id and update in temp table.
+	INSERT INTO lookup.lookup_reservation (lookup_reservation_key,source_id)
+	SELECT DISTINCT
+		s.reservation_id,
+		s.source_id
+	FROM
+		t_stage_to_warehouse_opera s
+	ON CONFLICT (lookup_reservation_key,source_id)
+	DO NOTHING;
+	UPDATE
+		t_stage_to_warehouse_opera t
+	SET
+		internal_reservation_id = l.internal_reservation_id
+	FROM
+		lookup.lookup_reservation l
+	WHERE
+		l.lookup_reservation_key = t.reservation_id
+		AND l.source_id = t.source_id;
+    -- END - GET internal reservation id and update in temp table.
 
+    -- START - GET internal property id and update in temp table.
+	INSERT INTO lookup.lookup_property (property_code,source_id)
+	SELECT DISTINCT
+		UPPER(resort),
+		source_id
+	FROM
+		t_stage_to_warehouse_opera
+	ON CONFLICT (property_code,source_id)
+	DO NOTHING;
 
+	UPDATE
+		t_stage_to_warehouse_opera t
+	SET
+		internal_property_id = l.internal_property_id
+	FROM
+		lookup.lookup_property l
+	WHERE
+		UPPER(l.property_code) = UPPER(t.resort)
+		AND l.source_id = t.source_id;
+    -- START - GET internal property id and update in temp table.
+    -- START - Create partitions for all unique business date where business date is not null.
+    FOR p IN SELECT DISTINCT business_date FROM t_stage_to_warehouse_opera WHERE business_date IS NOT NULL
+        loop
+            PERFORM warehouse.f_create_table_partition('warehouse.reservation_stay_date_f',CAST(p.business_date AS character varying));
+            PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_f',CAST(p.business_date AS character varying));
+            PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_extension_f',CAST(p.business_date AS character varying));
+        end loop;
+    -- END - Create partitions for all unique business date where business date is not null.
+    -- START - insert into warehouse tables.
 	INSERT INTO warehouse.reservation_stay_date_f
 	(
         source_id,
@@ -60,9 +130,9 @@ BEGIN
         etl_ingest_datetime
     )
 	SELECT
-        sourceId,
-        lr.internal_reservation_id,
-        lookup.f_lookup_property(propertyCode,sourceId),
+        source_id,
+        internal_reservation_id,
+        s.internal_property_id,
         s.business_date,
         s.stay_date,
         s.begin_date,
@@ -91,12 +161,7 @@ BEGIN
         s.etl_file_name,
         current_timestamp
 	FROM
-		stage.stage_opera s
-    	JOIN lookup.lookup_reservation lr ON lr.lookup_reservation_key =  s.reservation_id AND lr.source_id = s.source_Id
-	WHERE
-		(s.etl_batch_id = etlBatchId OR etlBatchId IS NULL)
-		AND s.source_id = sourceId;
-
+		t_stage_to_warehouse_opera s;
 
     INSERT INTO warehouse.reservation_business_date_f
     (
@@ -135,9 +200,9 @@ BEGIN
         etl_ingest_datetime
     )
     SELECT DISTINCT
-		sourceId,
-		lookup.f_lookup_reservation(s.reservation_id,sourceId),
-		lookup.f_lookup_property(propertyCode,sourceId),
+		source_id,
+		internal_reservation_id,
+		internal_property_id,
         s.business_date,
         s.confirmation_no,
         s.reservation_id,
@@ -169,53 +234,15 @@ BEGIN
         s.etl_file_name,
         current_timestamp
     FROM
-        stage.stage_opera s
-        JOIN lookup.lookup_reservation lr ON lr.lookup_reservation_key =  s.reservation_id AND lr.source_id = s.source_Id
-    WHERE
-		(s.etl_batch_id = etlBatchId OR etlBatchId IS NULL)
-		AND s.source_id = sourceId;
+       t_stage_to_warehouse_opera s;
 
-    DELETE FROM
-        stage.stage_opera_distinct
-    WHERE
-		(etl_batch_id = etlBatchId OR etlBatchId IS NULL)
-		AND source_id = sourceId;
-
-    INSERT INTO stage.stage_opera_distinct
-    (
-        etl_batch_id,
-        source_id,
-        reservation_id,
-        business_date,
-        vip_status,
-        guest_city,
-        guest_country,
-        guest_nationality,
-        membership_id,
-        membership_type,
-        membership_level,
-        membership_class,
-        travel_agent_id,
-        travel_agent_name,
-        travel_agent_address_line_1,
-        travel_agent_city,
-        travel_agent_state,
-        travel_agent_country,
-        travel_agent_postal_code,
-        company_id,
-        company_name,
-        company_address_line_1,
-        company_city,
-        company_state,
-        company_country,
-        company_postal_code,
-        allotment_header_id,
-        resv_name_id,
-        etl_file_name    
-    )
+    DROP TABLE IF EXISTS t_stage_opera_distinct;
+    CREATE TEMPORARY TABLE t_stage_opera_distinct AS
 	SELECT DISTINCT
 	    etl_batch_id,
 		source_id,
+		internal_reservation_id,
+		internal_property_id,
 		reservation_id,
         business_date,
         vip_status,
@@ -244,15 +271,7 @@ BEGIN
         resv_name_id,
         s.etl_file_name
     FROM
-        stage.stage_opera s
-    WHERE
-		(s.etl_batch_id = etlBatchId OR etlBatchId IS NULL)
-		AND s.source_id = sourceId;
-
-
-
-
-
+        t_stage_to_warehouse_opera s;
     INSERT INTO warehouse.reservation_business_date_extension_f
     (
     source_id,
@@ -265,8 +284,8 @@ BEGIN
 	)
 	SELECT
 		s.source_id,
-		lr.internal_reservation_id,
-		lookup.f_lookup_property(propertyCode,s.source_id),
+		internal_reservation_id,
+		internal_property_id,
         s.business_date,
         (
           SELECT row_to_json(d)
@@ -296,37 +315,40 @@ BEGIN
                 ,company_postal_code
                 ,allotment_header_id
                 ,resv_name_id
-            FROM stage.stage_opera_distinct d
+            FROM t_stage_opera_distinct d
             WHERE d.reservation_id=s.reservation_id AND d.etl_batch_id = s.etl_batch_id
           ) d
         ),
         s.etl_file_name,
         current_timestamp
     FROM
-        stage.stage_opera_distinct s
-    	JOIN lookup.lookup_reservation lr ON lr.lookup_reservation_key =  s.reservation_id AND lr.source_id = s.source_Id
-    WHERE
-		(s.etl_batch_id = etlBatchId OR etlBatchId IS NULL)
-		AND s.source_id = sourceId;
+        t_stage_opera_distinct s;
+    -- Update status in stage.stage_batch
+    UPDATE
+        stage.stage_batch b
+    SET
+        warehouse_completed_ind = true,
+        warehouse_transfer_completed_timestamp = current_timestamp
+    FROM
+            t_stage_to_warehouse_opera o
+        WHERE
+            o.etl_batch_id = b.batch_id;
+    -- END - insert into warehouse tables.
+    -- START CLEAN UP
 
     DELETE FROM
-        stage.stage_opera_distinct
+        stage.stage_opera s
+    USING
+       t_stage_to_warehouse_opera t
     WHERE
-		(etl_batch_id = etlBatchId OR etlBatchId IS NULL)
-		AND source_id = sourceId;
-
-/*
-    DELETE FROM
-        stage.stage_opera
-    WHERE
-        etl_batch_id = etlBatchId;
-*/
-
-    return rowCount;
+        s.etl_batch_id = t.etl_batch_id;
+  	DROP TABLE IF EXISTS t_stage_to_warehouse_opera;
+    DROP TABLE IF EXISTS t_stage_opera_distinct;
+    return null;
 END
 $BODY$;
 
---select * from lookup.f_process_stage_opera('tc17ffa42dd584828abf25bfbe5f740e2');
+--select * from lookup.f_cron_process_warehouse_opera('tc17ffa42dd584828abf25bfbe5f740e2');
 
 --select * from warehouse.reservation_business_date_extension_f;
 

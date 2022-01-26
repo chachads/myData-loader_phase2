@@ -1,10 +1,10 @@
--- FUNCTION: lookup.f_process_stage_opera(character varying)
+-- FUNCTION: lookup.f_process_stage_onq_pmsledger(character varying)
 
-DROP FUNCTION IF EXISTS lookup.f_process_stage_opera(bigint);
+DROP FUNCTION IF EXISTS lookup.f_process_stage_onq_pmsledger(character varying);
 CREATE SCHEMA IF NOT EXISTS lookup;
 
-CREATE OR REPLACE FUNCTION lookup.f_process_stage_opera(
-	etlBatchId bigint)
+CREATE OR REPLACE FUNCTION lookup.f_process_stage_onq_pmsledger(
+	etlBatchId character varying)
     RETURNS integer
     LANGUAGE 'plpgsql'
     COST 100
@@ -23,9 +23,6 @@ BEGIN
 	PERFORM warehouse.f_create_table_partition('warehouse.reservation_stay_date_f',partitionValue);
 	PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_f',partitionValue);
 	PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_extension_f',partitionValue);
-	PERFORM lookup.f_lookup_reservation_iu(etlBatchId,sourceId);
-
-
 	INSERT INTO warehouse.reservation_stay_date_f
 	(
         source_id,
@@ -61,7 +58,7 @@ BEGIN
     )
 	SELECT
         sourceId,
-        lr.internal_reservation_id,
+        lookup.f_lookup_reservation(s.reservation_id,sourceId),
         lookup.f_lookup_property(propertyCode,sourceId),
         s.business_date,
         s.stay_date,
@@ -92,10 +89,8 @@ BEGIN
         current_timestamp
 	FROM
 		stage.stage_opera s
-    	JOIN lookup.lookup_reservation lr ON lr.lookup_reservation_key =  s.reservation_id AND lr.source_id = s.source_Id
 	WHERE
-		(s.etl_batch_id = etlBatchId OR etlBatchId IS NULL)
-		AND s.source_id = sourceId;
+		s.etl_batch_id = etlBatchId;
 
 
     INSERT INTO warehouse.reservation_business_date_f
@@ -170,16 +165,12 @@ BEGIN
         current_timestamp
     FROM
         stage.stage_opera s
-        JOIN lookup.lookup_reservation lr ON lr.lookup_reservation_key =  s.reservation_id AND lr.source_id = s.source_Id
     WHERE
-		(s.etl_batch_id = etlBatchId OR etlBatchId IS NULL)
-		AND s.source_id = sourceId;
-
+		s.etl_batch_id = etlBatchId;
     DELETE FROM
         stage.stage_opera_distinct
     WHERE
-		(etl_batch_id = etlBatchId OR etlBatchId IS NULL)
-		AND source_id = sourceId;
+        etl_batch_id = etlBatchId;
 
     INSERT INTO stage.stage_opera_distinct
     (
@@ -246,8 +237,7 @@ BEGIN
     FROM
         stage.stage_opera s
     WHERE
-		(s.etl_batch_id = etlBatchId OR etlBatchId IS NULL)
-		AND s.source_id = sourceId;
+		s.etl_batch_id = etlBatchId;
 
 
 
@@ -265,7 +255,7 @@ BEGIN
 	)
 	SELECT
 		s.source_id,
-		lr.internal_reservation_id,
+		lookup.f_lookup_reservation(s.reservation_id,s.source_id),
 		lookup.f_lookup_property(propertyCode,s.source_id),
         s.business_date,
         (
@@ -304,29 +294,26 @@ BEGIN
         current_timestamp
     FROM
         stage.stage_opera_distinct s
-    	JOIN lookup.lookup_reservation lr ON lr.lookup_reservation_key =  s.reservation_id AND lr.source_id = s.source_Id
     WHERE
-		(s.etl_batch_id = etlBatchId OR etlBatchId IS NULL)
-		AND s.source_id = sourceId;
+		s.etl_batch_id = etlBatchId;
 
     DELETE FROM
         stage.stage_opera_distinct
     WHERE
-		(etl_batch_id = etlBatchId OR etlBatchId IS NULL)
-		AND source_id = sourceId;
+        etl_batch_id = etlBatchId;
 
-/*
+
     DELETE FROM
         stage.stage_opera
     WHERE
         etl_batch_id = etlBatchId;
-*/
+
 
     return rowCount;
 END
 $BODY$;
 
---select * from lookup.f_process_stage_opera('tc17ffa42dd584828abf25bfbe5f740e2');
+--select * from lookup.f_process_stage_onq_pmsledger('tc17ffa42dd584828abf25bfbe5f740e2');
 
 --select * from warehouse.reservation_business_date_extension_f;
 

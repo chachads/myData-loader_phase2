@@ -29,6 +29,13 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
     public Object handleRequest(S3Event s3Event, Context context) {
         String s3Bucket = s3Event.getRecords().get(0).getS3().getBucket().getName();
         String s3Key = s3Event.getRecords().get(0).getS3().getObject().getKey();
+        processFile(s3Bucket, s3Key);
+        return null;
+
+    }
+
+
+    public void processFile(String s3Bucket, String s3Key) {
         CommonUtils.logToSystemOut(String.format("Bucket: %s. Key: %s", s3Bucket, s3Key));
         IngestSourceDetail ingestSourceDetail = new IngestSourceDetail(s3Key, s3Bucket);
         try {
@@ -47,9 +54,10 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
             // log source tracker for s3 trigger event.
             logSourceTrackerIU(ingestSourceDetail.getIngestionTrackerDetail());
             refreshSourceDefinition(ingestSourceDetail);
+            Long etlBatchId = getMasterStageId(ingestSourceDetail.getDbSourceId(), ingestSourceDetail.getRawFileName());
             List<SourceFieldParameter> paramList = readStageTableDef(ingestSourceDetail);
             String paramQueryString = getParamQueryStringBySource(paramList.size());
-            String etlBatchId = "t" + UUID.randomUUID().toString().replace("-", "");
+            //Long etlBatchId = "t" + UUID.randomUUID().toString().replace("-", "");
 
             Integer rowCount = 0;
             Integer batchSize = 1000;
@@ -121,37 +129,40 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
                     moveFileToErrorDZ(ingestSourceDetail);
 
                 } else {
+                    setStageCompletedInd(etlBatchId);
                     ingestSourceDetail.getIngestionTrackerDetail().setEIngestionStatus(GlobalConstant.INGESTION_STATUS.STAGE_WRITE_COMPLETE);
                     ingestSourceDetail.getIngestionTrackerDetail().setStageWriteTime(new Timestamp(System.currentTimeMillis()));
                     ingestSourceDetail.getIngestionTrackerDetail().setInsertRowCount(rowCount);
                     logSourceTrackerIU(ingestSourceDetail.getIngestionTrackerDetail());
                     Boolean warehouseWriteFailed = false;
-                    if (!Objects.isNull(ingestSourceDetail.getWarehouseFunctionName())) {
-                        try {
-                            CommonUtils.logToSystemOut("MOVING TO WAREHOUSE");
-                            PreparedStatement moveToStage = dbConnection.prepareStatement(String.format("select * from %s('%s');", ingestSourceDetail.getWarehouseFunctionName(), etlBatchId));
-                            CommonUtils.logToSystemOut(moveToStage.toString());
-                            moveToStage.execute();
-                        } catch (Exception e) {
+                    if (!GlobalConstant.ENV_USE_CRON_TO_LOAD_WAREHOUSE) {
+                        if (!Objects.isNull(ingestSourceDetail.getWarehouseFunctionName())) {
+                            try {
+                                CommonUtils.logToSystemOut("MOVING TO WAREHOUSE");
+                                PreparedStatement moveToStage = dbConnection.prepareStatement(String.format("select * from %s(%d);", ingestSourceDetail.getWarehouseFunctionName(), etlBatchId));
+                                CommonUtils.logToSystemOut(moveToStage.toString());
+                                moveToStage.execute();
+                            } catch (Exception e) {
+                                warehouseWriteFailed = true;
+                                ingestSourceDetail.getIngestionTrackerDetail().setStatusMessage(e.getMessage());
+                            }
+                        } else {
                             warehouseWriteFailed = true;
-                            ingestSourceDetail.getIngestionTrackerDetail().setStatusMessage(e.getMessage());
+                            ingestSourceDetail.getIngestionTrackerDetail().setStatusMessage("Warehouse Function name is null in lookup.lookup_source");
                         }
-                    } else {
-                        warehouseWriteFailed = true;
-                        ingestSourceDetail.getIngestionTrackerDetail().setStatusMessage("Warehouse Function name is null in lookup.lookup_source");
+                        if (warehouseWriteFailed) {
+                            ingestSourceDetail.getIngestionTrackerDetail().setEIngestionStatus(GlobalConstant.INGESTION_STATUS.WAREHOUSE_WRITE_FAILED);
+                            logSourceTrackerIU(ingestSourceDetail.getIngestionTrackerDetail());
+                            moveFileToErrorDZ(ingestSourceDetail);
+                            CommonUtils.logToSystemOut("closing readers");
+
+                        } else {
+                            ingestSourceDetail.getIngestionTrackerDetail().setEIngestionStatus(GlobalConstant.INGESTION_STATUS.WAREHOUSE_WRITE_COMPLETE);
+                            ingestSourceDetail.getIngestionTrackerDetail().setWarehouseWriteTime(new Timestamp(System.currentTimeMillis()));
+                            logSourceTrackerIU(ingestSourceDetail.getIngestionTrackerDetail());
+                        }
                     }
-                    if (warehouseWriteFailed) {
-                        ingestSourceDetail.getIngestionTrackerDetail().setEIngestionStatus(GlobalConstant.INGESTION_STATUS.WAREHOUSE_WRITE_FAILED);
-                        logSourceTrackerIU(ingestSourceDetail.getIngestionTrackerDetail());
-                        moveFileToErrorDZ(ingestSourceDetail);
-                        CommonUtils.logToSystemOut("closing readers");
-
-                    } else {
-                        ingestSourceDetail.getIngestionTrackerDetail().setEIngestionStatus(GlobalConstant.INGESTION_STATUS.WAREHOUSE_WRITE_COMPLETE);
-                        ingestSourceDetail.getIngestionTrackerDetail().setWarehouseWriteTime(new Timestamp(System.currentTimeMillis()));
-                        logSourceTrackerIU(ingestSourceDetail.getIngestionTrackerDetail());
-                        CommonUtils.logToSystemOut("closing readers");
-
+                    if (!warehouseWriteFailed) {
                         S3HelperResponse moveObjectResponse = s3.moveObject();
                         CommonUtils.logToSystemOut(String.format("back from S3 MOVE OBJECT. %s. Status Message: %s", moveObjectResponse.getHasError(), moveObjectResponse.getStatusMessage()));
                         if (moveObjectResponse.getHasError()) {
@@ -179,7 +190,6 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
         } finally {
             logSourceFileLookup(ingestSourceDetail);
         }
-        return null;
     }
 
     public static void refreshSourceDefinition(IngestSourceDetail ingestSourceDetail) throws SQLException {
@@ -255,7 +265,8 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
         return String.join(",", paramList);
     }
 
-    protected static void createPreparedStatement(PreparedStatement preparedStatement, String sourceFormat, Object inputRecord, List<SourceFieldParameter> sourceFieldParameterList, String etlBatchId, String etlFileName, Integer sourceId, Integer lineNumber) {
+
+    protected static void createPreparedStatement(PreparedStatement preparedStatement, String sourceFormat, Object inputRecord, List<SourceFieldParameter> sourceFieldParameterList, Long etlBatchId, String etlFileName, Integer sourceId, Integer lineNumber) {
         JSONObject jsonRecord = null;
         String[] csvRecord = null;
         switch (sourceFormat) {
@@ -277,9 +288,7 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
                     case CHARACTER_VARYING:
                         String fieldStringValue;
                         if (p.getEtlField())
-                            if (p.getParameterName().equals(GlobalConstant.ETL_COLUMN_NAME.etl_batch_id.toString()))
-                                fieldStringValue = etlBatchId;
-                            else if (p.getParameterName().equals(GlobalConstant.ETL_COLUMN_NAME.etl_file_name.toString()))
+                            if (p.getParameterName().equals(GlobalConstant.ETL_COLUMN_NAME.etl_file_name.toString()))
                                 fieldStringValue = etlFileName;
                             else
                                 fieldStringValue = null;
@@ -319,7 +328,10 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
 
                     case BIGINT:
                         Long fieldLongValue = null;
-                        if (!p.getEtlField()) {
+                        if (p.getEtlField()) {
+                            if (p.getParameterName().equals(GlobalConstant.ETL_COLUMN_NAME.etl_batch_id.toString()))
+                                fieldLongValue = etlBatchId;
+                        } else {
                             switch (sourceFormat) {
                                 case "CSV":
                                     fieldLongValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > p.getParameterOrder()) ? Long.parseLong(lambdaCSVRecord[p.getParameterOrder() - 1]) : null;
@@ -543,5 +555,26 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
         }
 
 
+    }
+
+    protected static Long getMasterStageId(Integer sourceId, String etlFileName) {
+        Long masterStageId = null;
+        try {
+            PreparedStatement masterStageInsert = dbConnection.prepareStatement(String.format("select * from stage.f_stage_batch_i(%d,'%s')", sourceId, etlFileName));
+            ResultSet masterRS = masterStageInsert.executeQuery();
+            // this will have only 1 row.
+            while (masterRS.next()) {
+                masterStageId = masterRS.getLong(1);
+            }
+        } catch (Exception e) {
+            CommonUtils.logErrorToSystemOut(e.getMessage());
+        }
+        return masterStageId;
+    }
+
+    protected static void setStageCompletedInd(Long etlBatchId) throws SQLException {
+        String updateSQL = String.format("UPDATE stage.stage_batch SET stage_completed_ind=true,stage_completed_timestamp=current_timestamp WHERE batch_id = %d", etlBatchId);
+        PreparedStatement preparedStatement = dbConnection.prepareStatement(updateSQL);
+        preparedStatement.execute();
     }
 }

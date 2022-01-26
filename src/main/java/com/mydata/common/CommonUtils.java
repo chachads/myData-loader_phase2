@@ -74,7 +74,7 @@ public class CommonUtils {
         System.out.println(message);
     }
     public static void logToSystemOut(String message) {
-        if (Boolean.parseBoolean(System.getenv(GlobalConstant.ENV_LOG_TO_SYSTEM_OUT)))
+        if (GlobalConstant.ENV_LOG_TO_SYSTEM_OUT)
             System.out.println(message);
     }
     public static HashMap<GlobalConstant.DB_CONNECTION_KEY,String> getConnectionDetail(){
