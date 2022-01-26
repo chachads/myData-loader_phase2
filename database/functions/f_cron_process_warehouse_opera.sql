@@ -9,13 +9,8 @@ CREATE OR REPLACE FUNCTION lookup.f_cron_process_warehouse_opera()
     COST 100
     VOLATILE PARALLEL UNSAFE
 AS $BODY$
-DECLARE rowCount integer;
-DECLARE propertyCode character varying;
 DECLARE sourceId integer;
-DECLARE partitionValue character varying;
-DECLARE partitionCount integer;
-DECLARE iPartition integer;
-DECLARE p record;
+DECLARE partitionRecord record;
 BEGIN
     SELECT
         internal_source_id INTO sourceId
@@ -88,11 +83,11 @@ BEGIN
 		AND l.source_id = t.source_id;
     -- START - GET internal property id and update in temp table.
     -- START - Create partitions for all unique business date where business date is not null.
-    FOR p IN SELECT DISTINCT business_date FROM t_stage_to_warehouse_opera WHERE business_date IS NOT NULL
+    FOR partitionRecord IN SELECT DISTINCT business_date FROM t_stage_to_warehouse_opera WHERE business_date IS NOT NULL
         loop
-            PERFORM warehouse.f_create_table_partition('warehouse.reservation_stay_date_f',CAST(p.business_date AS character varying));
-            PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_f',CAST(p.business_date AS character varying));
-            PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_extension_f',CAST(p.business_date AS character varying));
+            PERFORM warehouse.f_create_table_partition('warehouse.reservation_stay_date_f',CAST(partitionRecord.business_date AS character varying));
+            PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_f',CAST(partitionRecord.business_date AS character varying));
+            PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_extension_f',CAST(partitionRecord.business_date AS character varying));
         end loop;
     -- END - Create partitions for all unique business date where business date is not null.
     -- START - insert into warehouse tables.

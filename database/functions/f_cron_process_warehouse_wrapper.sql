@@ -18,6 +18,7 @@ DECLARE iPartition integer;
 DECLARE p record;
 BEGIN
     PERFORM lookup.f_cron_process_warehouse_opera();
+    PERFORM lookup.f_cron_process_warehouse_onq_crsstay();
     return null;
 END
 $BODY$;
