@@ -87,13 +87,13 @@ BEGIN
     -- START - Create partitions for all unique business date where business date is not null.
     FOR partitionRecord IN SELECT DISTINCT partition_date FROM t_stage_to_warehouse_onq_crsstay WHERE partition_date IS NOT NULL
         loop
-            PERFORM warehouse.f_create_table_partition('warehouse.reservation_stay_date_f',CAST(partitionRecord.partition_date AS character varying));
+            PERFORM warehouse.f_create_table_partition('warehouse.reservation_stay_date_master_f',CAST(partitionRecord.partition_date AS character varying));
             PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_f',CAST(partitionRecord.partition_date AS character varying));
             PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_extension_f',CAST(partitionRecord.partition_date AS character varying));
         end loop;
     -- END - Create partitions for all unique business date where business date is not null.
 
-		INSERT INTO warehouse.reservation_stay_date_f
+		INSERT INTO warehouse.reservation_stay_date_master_f
     	(
             source_id,
             internal_reservation_id,
@@ -128,6 +128,63 @@ BEGIN
     	FROM
     		t_stage_to_warehouse_onq_crsstay s;
 
+/*
+    INSERT INTO warehouse.reservation_business_date_f
+    (
+        source_id,
+        internal_reservation_id,
+        internal_property_id,
+        business_date,
+        confirmation_number,
+        reservation_key,
+        guarantee_code,
+        reservation_status,
+        stay_rooms,
+        stay_adults,
+        stay_children,
+        market_code,
+        cancellation_code,
+        etl_file_name,
+        etl_ingest_datetime
+    )
+    SELECT
+        source_id,
+        internal_reservation_id,
+        internal_property_id,
+        partition_date,
+        confirmation_number,
+        CONCAT(confirmation_number,':',gnr,':',partition_date),
+        guarantee_type_code,
+        reservation_status,
+        count(confirmation_number),
+        number_of_adults,
+        number_of_children,
+        mcat_code,
+        cancellation_number,
+        etl_file_name,
+        current_timestamp
+    FROM
+        t_stage_to_warehouse_onq_crsstay
+    GROUP BY
+        CONCAT(confirmation_number,':',gnr,':',partition_date),
+        source_id,
+        internal_reservation_id,
+        internal_property_id,
+        partition_date,
+        confirmation_number,
+        CONCAT(confirmation_number,':',gnr,':',partition_date),
+        guarantee_type_code,
+        reservation_status,
+        number_of_adults,
+        number_of_children,
+        mcat_code,
+        cancellation_number,
+        etl_file_name;
+
+*/
+
+
+
     UPDATE
         stage.stage_batch b
     SET
@@ -147,12 +204,12 @@ BEGIN
     FROM
         t_stage_to_warehouse_onq_crsstay;
                      
-    DELETE FROM
+    /*DELETE FROM
         stage.stage_onq_crsstay s
     USING
        t_distinct_etl_batch_ids t
     WHERE
-        s.etl_batch_id = t.etl_batch_id;
+        s.etl_batch_id = t.etl_batch_id;*/
 
     return null;
 END
