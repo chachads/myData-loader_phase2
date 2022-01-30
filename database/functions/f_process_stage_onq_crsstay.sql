@@ -20,12 +20,12 @@ BEGIN
 	*/
 	SELECT UPPER(crs_inn_code),source_id,CAST(partition_date AS character varying) INTO propertyCode,sourceId,partitionValue FROM  stage.stage_onq_crsstay WHERE (etl_batch_id = etlBatchId OR etlBatchId IS NULL);
 	-- Create partition for business date if needed.
-	PERFORM warehouse.f_create_table_partition('warehouse.reservation_stay_date_f',partitionValue);
-	PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_f',partitionValue);
-	PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_extension_f',partitionValue);
+	PERFORM warehouse.f_create_table_partition('warehouse.reservation_stay_date_master_f',partitionValue);
+	--PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_f',partitionValue);
+	--PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_extension_f',partitionValue);
 	PERFORM lookup.f_lookup_reservation_iu(etlBatchId,sourceId);
 
-		INSERT INTO warehouse.reservation_stay_date_f
+		INSERT INTO warehouse.reservation_stay_date_master_f
     	(
             source_id,
             internal_reservation_id,

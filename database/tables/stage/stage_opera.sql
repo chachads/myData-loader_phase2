@@ -84,7 +84,8 @@ CREATE TABLE IF NOT EXISTS stage.stage_opera
     etl_batch_id bigint,
     source_id integer,
     etl_file_name character varying COLLATE pg_catalog."default",
-    etl_ingest_datetime timestamp without time zone
+    etl_ingest_datetime timestamp without time zone,
+    internal_stage_id bigserial not null
 )
 
 TABLESPACE pg_default;

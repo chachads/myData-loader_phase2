@@ -21,8 +21,8 @@ BEGIN
 	SELECT UPPER(resort),source_id,CAST(business_date AS character varying) INTO propertyCode,sourceId,partitionValue FROM  stage.stage_opera WHERE (etl_batch_id = etlBatchId OR etlBatchId IS NULL);
 	-- Create partition for business date if needed.
 	PERFORM warehouse.f_create_table_partition('warehouse.reservation_stay_date_f',partitionValue);
-	PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_f',partitionValue);
-	PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_extension_f',partitionValue);
+	--PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_f',partitionValue);
+	--PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_extension_f',partitionValue);
 	INSERT INTO warehouse.reservation_stay_date_f
 	(
         source_id,
