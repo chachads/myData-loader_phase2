@@ -1,0 +1,6 @@
+CREATE INDEX reservation_id_stay_date_idx ON warehouse.reservation_stay_date_master_f (internal_reservation_id);
+--CREATE INDEX reservation_id_business_date_idx ON warehouse.reservation_business_date_f (internal_reservation_id);
+--CREATE INDEX reservation_id_business_extension_date_idx ON warehouse.reservation_business_date_extension_f (internal_reservation_id);
+CREATE INDEX lookup_reservation_lookup_reservation_key_idx ON lookup.lookup_reservation (lookup_reservation_key);
+CREATE INDEX stage_opera_batch_id_idx ON stage.stage_opera (etl_batch_id);
+CREATE INDEX stage_onq_crsstay_batch_id_idx ON stage.stage_onq_crsstay (etl_batch_id);
