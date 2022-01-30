@@ -1,9 +1,9 @@
 -- FUNCTION: lookup.f_cron_process_warehouse_onq_crsstay(character varying)
 
-DROP FUNCTION IF EXISTS lookup.f_cron_process_warehouse_onq_crsstay();
+DROP FUNCTION IF EXISTS lookup.f_cron_process_warehouse_onq_crsstay(bigint);
 CREATE SCHEMA IF NOT EXISTS lookup;
 
-CREATE OR REPLACE FUNCTION lookup.f_cron_process_warehouse_onq_crsstay()
+CREATE OR REPLACE FUNCTION lookup.f_cron_process_warehouse_onq_crsstay(etlBatchId bigint)
     RETURNS integer
     LANGUAGE 'plpgsql'
     COST 100
@@ -35,7 +35,8 @@ BEGIN
 		b.source_id = sourceId
 		AND b.stage_completed_ind = true
 		AND b.warehouse_completed_ind = false
-		AND b.warehouse_transfer_start_timestamp IS NULL;
+		AND b.warehouse_transfer_start_timestamp IS NULL
+		AND (b.etl_batch_id = etlBatchId OR etlBatchId IS NULL);
     -- mark these records as picked up so that another run does not pick it.
 	UPDATE
 		stage.stage_batch b
@@ -90,7 +91,6 @@ BEGIN
         loop
             PERFORM warehouse.f_create_table_partition('warehouse.reservation_stay_date_master_f',CAST(partitionRecord.partition_date AS character varying));
             PERFORM warehouse.f_create_table_partition('warehouse.reservation_stay_date_extension_f',CAST(partitionRecord.partition_date AS character varying));
-           -- PERFORM warehouse.f_create_table_partition('warehouse.reservation_business_date_extension_f',CAST(partitionRecord.partition_date AS character varying));
         end loop;
     -- END - Create partitions for all unique business date where business date is not null.
     INSERT INTO warehouse.reservation_stay_date_master_f

@@ -17,14 +17,10 @@ DECLARE partitionCount integer;
 DECLARE iPartition integer;
 DECLARE p record;
 BEGIN
-    PERFORM lookup.f_cron_process_warehouse_opera();
-    PERFORM lookup.f_cron_process_warehouse_onq_crsstay();
+    PERFORM lookup.f_cron_process_warehouse_opera(null);
+    PERFORM lookup.f_cron_process_warehouse_onq_crsstay(null);
     return null;
 END
 $BODY$;
-
---select * from lookup.f_cron_process_warehouse_wrapper('tc17ffa42dd584828abf25bfbe5f740e2');
-
---select * from warehouse.reservation_business_date_extension_f;
 
 

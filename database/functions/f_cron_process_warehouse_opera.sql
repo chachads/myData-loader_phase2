@@ -1,9 +1,9 @@
 -- FUNCTION: lookup.f_cron_process_warehouse_opera(character varying)
 
-DROP FUNCTION IF EXISTS lookup.f_cron_process_warehouse_opera();
+DROP FUNCTION IF EXISTS lookup.f_cron_process_warehouse_opera(bigint);
 CREATE SCHEMA IF NOT EXISTS lookup;
 
-CREATE OR REPLACE FUNCTION lookup.f_cron_process_warehouse_opera()
+CREATE OR REPLACE FUNCTION lookup.f_cron_process_warehouse_opera(etlBatchId bigint)
     RETURNS integer
     LANGUAGE 'plpgsql'
     COST 100
@@ -33,7 +33,8 @@ BEGIN
 		b.source_id = sourceId
 		AND b.stage_completed_ind = true
 		AND b.warehouse_completed_ind = false
-		AND b.warehouse_transfer_start_timestamp IS NULL;
+		AND b.warehouse_transfer_start_timestamp IS NULL
+		AND (b.etl_batch_id = etlBatchId OR etlBatchId IS NULL);
     -- mark these records as picked up so that another run does not pick it.
 	UPDATE
 		stage.stage_batch b
@@ -274,9 +275,5 @@ BEGIN
     return null;
 END
 $BODY$;
-
---select * from lookup.f_cron_process_warehouse_opera('tc17ffa42dd584828abf25bfbe5f740e2');
-
---select * from warehouse.reservation_business_date_extension_f;
 
 
