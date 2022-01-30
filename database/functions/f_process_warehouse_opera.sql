@@ -1,9 +1,9 @@
--- FUNCTION: lookup.f_cron_process_warehouse_opera(character varying)
+-- FUNCTION: lookup.f_process_warehouse_opera(character varying)
 
-DROP FUNCTION IF EXISTS lookup.f_cron_process_warehouse_opera(bigint);
+DROP FUNCTION IF EXISTS lookup.f_process_warehouse_opera(bigint);
 CREATE SCHEMA IF NOT EXISTS lookup;
 
-CREATE OR REPLACE FUNCTION lookup.f_cron_process_warehouse_opera(etlBatchId bigint)
+CREATE OR REPLACE FUNCTION lookup.f_process_warehouse_opera(etlBatchId bigint)
     RETURNS integer
     LANGUAGE 'plpgsql'
     COST 100
@@ -34,7 +34,7 @@ BEGIN
 		AND b.stage_completed_ind = true
 		AND b.warehouse_completed_ind = false
 		AND b.warehouse_transfer_start_timestamp IS NULL
-		AND (b.etl_batch_id = etlBatchId OR etlBatchId IS NULL);
+		AND (b.batch_id = etlBatchId OR etlBatchId IS NULL);
     -- mark these records as picked up so that another run does not pick it.
 	UPDATE
 		stage.stage_batch b
