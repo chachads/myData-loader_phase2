@@ -14,7 +14,8 @@ public interface GlobalConstant {
     enum SOURCE_KEY {
         OPERA,
         ONQ_CRSSTAY,
-        ONQ_PMSLEDGER
+        ONQ_PMSLEDGER,
+        ONQ_SALT
     }
     enum PSQL_PARAMETER_TYPE {
         CHARACTER_VARYING,
