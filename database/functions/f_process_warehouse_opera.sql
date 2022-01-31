@@ -89,6 +89,7 @@ BEGIN
         loop
             PERFORM warehouse.f_create_table_partition('warehouse.reservation_stay_date_master_f',CAST(partitionRecord.business_date AS character varying));
             PERFORM warehouse.f_create_table_partition('warehouse.reservation_stay_date_extension_f',CAST(partitionRecord.business_date AS character varying));
+            PERFORM warehouse.f_create_table_partition('warehouse.reservation_stay_date_revenue_master_f',CAST(partitionRecord.business_date AS character varying));
         end loop;
     -- END - Create partitions for all unique business date where business date is not null.
     -- START - insert into warehouse tables.
@@ -163,7 +164,42 @@ BEGIN
         current_timestamp
     FROM
         t_stage_to_warehouse_opera o;
-
+        
+    INSERT INTO 
+        warehouse.reservation_stay_date_revenue_master_f
+        (
+            internal_stage_id,
+            source_id,
+            internal_reservation_id,
+            internal_property_id,
+            business_date,
+            stay_date,
+            room_revenue,
+            food_revenue,
+            other_revenue,
+            total_revenue,
+            non_revenue,
+            tax,
+            etl_file_name,
+            etl_ingest_datetime
+        )
+    SELECT
+        o.internal_stage_id,
+        o.source_id,
+        o.internal_reservation_id,
+        o.internal_property_id,
+        business_date,
+        stay_date,
+        room_revenue,
+        food_revenue,
+        other_revenue,
+        total_revenue,
+        non_revenue,
+        tax,
+        o.etl_file_name,
+        current_timestamp
+    FROM
+        t_stage_to_warehouse_opera o;
     UPDATE
         t_stage_to_warehouse_opera t
     SET

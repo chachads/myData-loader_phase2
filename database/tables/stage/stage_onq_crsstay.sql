@@ -64,8 +64,3 @@ TABLESPACE pg_default;
 
 ALTER TABLE IF EXISTS stage.stage_onq_crsstay
     OWNER to postgres;
-
-    /*
-
-
-*/

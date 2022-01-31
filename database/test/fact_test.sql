@@ -7,6 +7,7 @@ INSERT INTO t_row_count SELECT 'lookup_property',COUNT(*) FROM lookup.lookup_pro
 INSERT INTO t_row_count SELECT 'lookup_reservation',COUNT(*) FROM lookup.lookup_reservation;
 INSERT INTO t_row_count SELECT 'reservation_stay_date_master_f',COUNT(*) FROM warehouse.reservation_stay_date_master_f;
 INSERT INTO t_row_count SELECT 'reservation_stay_date_extension_f',COUNT(*) FROM warehouse.reservation_stay_date_extension_f;
+INSERT INTO t_row_count SELECT 'reservation_stay_date_revenue_master_f',COUNT(*) FROM warehouse.reservation_stay_date_revenue_master_f;
 
 
 select * from monitor.ingestion_tracker;

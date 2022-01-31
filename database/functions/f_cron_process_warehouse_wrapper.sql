@@ -19,8 +19,12 @@ DECLARE p record;
 BEGIN
     PERFORM lookup.f_process_warehouse_opera(null);
     PERFORM lookup.f_process_warehouse_onq_crsstay(null);
+    PERFORM lookup.f_process_stage_onq_pmsledger(null);
     return null;
 END
 $BODY$;
-
+/*
+SELECT cron.schedule('*/1 * * * *', 'select lookup.f_cron_process_warehouse_wrapper()');
+update cron.job set database = 'mydata';
+*/
 
