@@ -20,6 +20,7 @@ BEGIN
     PERFORM lookup.f_process_warehouse_opera(null);
     PERFORM lookup.f_process_warehouse_onq_crsstay(null);
     PERFORM lookup.f_process_stage_onq_pmsledger(null);
+    PERFORM lookup.f_process_warehouse_onq_salt(null);
     return null;
 END
 $BODY$;
