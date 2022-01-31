@@ -1,7 +1,7 @@
 package com.mydata;
 
-import com.mydata.common.GlobalConstant;
 import com.mydata.common.CommonUtils;
+import com.mydata.common.GlobalConstant;
 import org.json.simple.JSONObject;
 
 import java.sql.*;
@@ -10,6 +10,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 public class App {
@@ -26,16 +27,105 @@ public class App {
         }
     }
 
-    public static void debugS3Event(){
+    protected static PreparedStatement getTableSchemaDefinition(String tableName) throws SQLException {
+        return dbConnection.prepareStatement(String.format("select column_name,data_type,ordinal_position,numeric_precision from information_schema.columns where table_name = '%s' and column_name <> 'internal_stage_id' order by ordinal_position;", tableName));
+
+    }
+
+    protected static List<SourceFieldParameter> readStageTableDef() throws SQLException {
+        //String[] stageTableNameList = ingestSourceDetail.getStageTableName().split("\\.");
+        String stageTableName = "stage_onq_crsstay";
+        PreparedStatement ps = getTableSchemaDefinition(stageTableName);
+        ResultSet rs = ps.executeQuery();
+        List<SourceFieldParameter> paramList = new ArrayList<>();
+        while (rs.next()) {
+            SourceFieldParameter p = new SourceFieldParameter();
+            p.setParameterName(rs.getString("column_name"));
+            p.setParameterOrder(rs.getInt("ordinal_position"));
+            p.setSourceKey(GlobalConstant.SOURCE_KEY.ONQ_CRSSTAY);
+            p.setEtlField(p.getParameterName().startsWith("etl"));
+            String paramType = rs.getString("data_type");
+            Integer numericPrecision = rs.getInt("numeric_precision");
+            switch (paramType) {
+                case "character varying":
+                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.CHARACTER_VARYING);
+                    break;
+                case "date":
+                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.DATE);
+                    //p.setDateFormat(ingestSourceDetail.getSourceDateFormat());
+                    break;
+                case "timestamp without time zone":
+                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.TIMESTAMP);
+                    //p.setTimestampFormat(ingestSourceDetail.getSourceTimeStampFormat());
+                    break;
+                case "integer":
+                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.INTEGER);
+                    break;
+                case "numeric":
+                    p.setParameterType(Objects.isNull(numericPrecision) ? GlobalConstant.PSQL_PARAMETER_TYPE.INTEGER : GlobalConstant.PSQL_PARAMETER_TYPE.DOUBLE);
+                    break;
+                case "bigint":
+                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.BIGINT);
+                    break;
+                case "boolean":
+                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.BOOLEAN);
+            }
+            paramList.add(p);
+        }
+        return paramList;
+    }
+
+
+    public static void getcolumnnames() {
+        try {
+            List<String> columnNameList = new ArrayList<>();
+            String tableName = "stage_onq_crsstay";
+            establishDBConnection();
+            PreparedStatement ps = dbConnection.prepareStatement(String.format("select column_name,data_type,ordinal_position,numeric_precision from information_schema.columns where table_name = '%s' and column_name <> 'internal_stage_id' order by ordinal_position;", tableName));
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                columnNameList.add(rs.getString("column_name"));
+            }
+            String columnString = String.join(",", columnNameList);
+            System.out.println(columnString);
+        } catch (SQLException e) {
+
+        }
+    }
+
+    public static void debugS3Event() {
         processS3Event e = new processS3Event();
         establishDBConnection();
         String filePath = "/Users/chachads/pocs/do/hg/STAY_Highgate_Hotels_20211217_20211217_1330.json";
         String s3Key = "ldz/ONQ_CRSSTAY/STAY_Highgate_Hotels_20211217_20211217_1330.json";
     }
+
     public static void main(String[] args) {
-        CommonUtils.logToSystemOut("HW");
-        String tsValue = "2021-12-15T20:19:10.000Z";
-        debugS3Event();
+        try {
+            establishDBConnection();
+            CommonUtils.logToSystemOut("HW");
+            String tsValue = "2021-12-15T20:19:10.000Z";
+            List<SourceFieldParameter> paramList = readStageTableDef();
+            String paramQueryString = getParamQueryStringBySource(paramList.size());
+            String columnNameString = getColumnNameString();
+
+            PreparedStatement preparedStatement = dbConnection.prepareStatement(String.format("INSERT INTO %s (%s) values (%s)", "stage.stage_onq_crsstay", columnNameString, paramQueryString));
+            System.out.println(preparedStatement.toString());
+
+        } catch (SQLException e) {
+
+        }
+    }
+
+    public static String getColumnNameString() throws SQLException {
+        String stageTableName = "stage_onq_crsstay";
+        List<String> columnNameList = new ArrayList<>();
+        PreparedStatement ps = dbConnection.prepareStatement(String.format("select column_name,data_type,ordinal_position,numeric_precision from information_schema.columns where table_name = '%s' and column_name <> 'internal_stage_id' order by ordinal_position;", stageTableName));
+        ResultSet rs = ps.executeQuery();
+        while (rs.next()) {
+            columnNameList.add(rs.getString("column_name"));
+        }
+        return String.join(",", columnNameList);
     }
 
     protected static void dateTest() {
@@ -115,18 +205,18 @@ public class App {
                         if (p.getEtlField())
                             if (p.getParameterName().equals(GlobalConstant.ETL_COLUMN_NAME.etl_batch_id.toString()))
                                 preparedStatement.setLong(p.getParameterOrder(), etlBatchId);
-                        else {
-                            switch (sourceFormat) {
-                                case "CSV":
-                                    fieldLongValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > p.getParameterOrder()) ? Long.parseLong(lambdaCSVRecord[p.getParameterOrder() - 1]) : null;
-                                    preparedStatement.setLong(p.getParameterOrder(), fieldLongValue);
-                                    break;
-                                case "JSON":
-                                    fieldLongValue = (lambdaJSONRecord != null && lambdaJSONRecord.containsKey(p.getParameterName()) && lambdaJSONRecord.get(p.getParameterName()) != null ? (Long) lambdaJSONRecord.get(p.getParameterName()) : 0);
-                                    preparedStatement.setLong(p.getParameterOrder(), fieldLongValue);
-                                    break;
+                            else {
+                                switch (sourceFormat) {
+                                    case "CSV":
+                                        fieldLongValue = (lambdaCSVRecord != null && lambdaCSVRecord.length > p.getParameterOrder()) ? Long.parseLong(lambdaCSVRecord[p.getParameterOrder() - 1]) : null;
+                                        preparedStatement.setLong(p.getParameterOrder(), fieldLongValue);
+                                        break;
+                                    case "JSON":
+                                        fieldLongValue = (lambdaJSONRecord != null && lambdaJSONRecord.containsKey(p.getParameterName()) && lambdaJSONRecord.get(p.getParameterName()) != null ? (Long) lambdaJSONRecord.get(p.getParameterName()) : 0);
+                                        preparedStatement.setLong(p.getParameterOrder(), fieldLongValue);
+                                        break;
+                                }
                             }
-                        }
                         break;
                     case DOUBLE:
                         Double fieldDoubleValue = 0D;
@@ -252,50 +342,6 @@ public class App {
 
 
     // - final methods
-    protected static List<SourceFieldParameter> readStageTableDef(IngestSourceDetail ingestSourceDetail) throws SQLException {
-        String[] stageTableNameList = ingestSourceDetail.getStageTableName().split("\\.");
-        String stageTableName = stageTableNameList[stageTableNameList.length - 1];
-        PreparedStatement ps = dbConnection.prepareStatement(String.format("select column_name,data_type,ordinal_position,numeric_precision from information_schema.columns where table_name = '%s' order by ordinal_position;", stageTableName));
-        ResultSet rs = ps.executeQuery();
-        List<SourceFieldParameter> paramList = new ArrayList<>();
-        while (rs.next()) {
-            SourceFieldParameter p = new SourceFieldParameter();
-            p.setParameterName(rs.getString("column_name"));
-            p.setParameterOrder(rs.getInt("ordinal_position"));
-            p.setSourceKey(GlobalConstant.SOURCE_KEY.OPERA);
-            p.setEtlField(p.getParameterName().startsWith("etl"));
-            String paramType = rs.getString("data_type");
-            Integer numericPrecision = rs.getInt("numeric_precision");
-            switch (paramType) {
-                case "character varying":
-                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.CHARACTER_VARYING);
-                    break;
-                case "date":
-                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.DATE);
-                    p.setDateFormat(ingestSourceDetail.getSourceDateFormat());
-                    break;
-                case "timestamp without time zone":
-                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.TIMESTAMP);
-                    p.setTimestampFormat(ingestSourceDetail.getSourceTimeStampFormat());
-                    break;
-                case "integer":
-                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.INTEGER);
-                    break;
-                case "numeric":
-                    p.setParameterType(numericPrecision == null ? GlobalConstant.PSQL_PARAMETER_TYPE.INTEGER : GlobalConstant.PSQL_PARAMETER_TYPE.DOUBLE);
-                    break;
-                case "bigint":
-                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.BIGINT);
-                    break;
-                case "boolean":
-                    p.setParameterType(GlobalConstant.PSQL_PARAMETER_TYPE.BOOLEAN);
-            }
-            paramList.add(p);
-
-            //                    add(new SourceFieldParameter(SOURCE_KEY.ONQ_PMSLEDGER, "etl_batch_id", PSQL_PARAMETER_TYPE.CHARACTER_VARYING, null, 1, true));
-        }
-        return paramList;
-    }
 
     public static IngestSourceDetail refreshSourceDefinition(String sourceKey) throws SQLException {
         IngestSourceDetail ingestSourceDetail = new IngestSourceDetail("ldz/ONQ_PMSLEDGER/abcd.csv", "mydata-poc");

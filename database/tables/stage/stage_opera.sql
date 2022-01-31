@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS stage.stage_opera
     stay_children integer,
     rate_code character varying COLLATE pg_catalog."default",
     rate_code_description character varying COLLATE pg_catalog."default",
-    room_rate decimal,
+    room_rate decimal(38,10),
     currency character varying COLLATE pg_catalog."default",
     market_code character varying COLLATE pg_catalog."default",
     source_code character varying COLLATE pg_catalog."default",
@@ -41,15 +41,15 @@ CREATE TABLE IF NOT EXISTS stage.stage_opera
     complimentary_yn character varying COLLATE pg_catalog."default",
     house_use_yn character varying COLLATE pg_catalog."default",
     day_use_yn character varying COLLATE pg_catalog."default",
-    discount_amt decimal,
-    discount_prcnt decimal,
+    discount_amt decimal(38,10),
+    discount_prcnt decimal(38,10),
     discount_reason character varying COLLATE pg_catalog."default",
-    room_revenue decimal,
-    food_revenue decimal,
-    other_revenue decimal,
-    total_revenue decimal,
-    non_revenue decimal,
-    tax decimal,
+    room_revenue decimal(38,10),
+    food_revenue decimal(38,10),
+    other_revenue decimal(38,10),
+    total_revenue decimal(38,10),
+    non_revenue decimal(38,10),
+    tax decimal(38,10),
     vip_status character varying COLLATE pg_catalog."default",
     guest_city character varying COLLATE pg_catalog."default",
     guest_country character varying COLLATE pg_catalog."default",
@@ -84,7 +84,8 @@ CREATE TABLE IF NOT EXISTS stage.stage_opera
     etl_batch_id bigint,
     source_id integer,
     etl_file_name character varying COLLATE pg_catalog."default",
-    etl_ingest_datetime timestamp without time zone
+    etl_ingest_datetime timestamp without time zone,
+    internal_stage_id bigserial not null
 )
 
 TABLESPACE pg_default;

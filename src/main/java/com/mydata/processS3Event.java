@@ -57,13 +57,14 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
             Long etlBatchId = getMasterStageId(ingestSourceDetail.getDbSourceId(), ingestSourceDetail.getRawFileName());
             List<SourceFieldParameter> paramList = readStageTableDef(ingestSourceDetail);
             String paramQueryString = getParamQueryStringBySource(paramList.size());
+            String columnNameString = getColumnNameString(ingestSourceDetail);
             //Long etlBatchId = "t" + UUID.randomUUID().toString().replace("-", "");
 
             Integer rowCount = 0;
             Integer batchSize = 1000;
 
-            PreparedStatement preparedStatement = dbConnection.prepareStatement(String.format("INSERT INTO %s values (%s)", ingestSourceDetail.getStageTableName(), paramQueryString));
-
+            PreparedStatement preparedStatement = dbConnection.prepareStatement(String.format("INSERT INTO %s (%s) values (%s)", ingestSourceDetail.getStageTableName(), columnNameString, paramQueryString));
+            CommonUtils.logToSystemOut(preparedStatement.toString());
             IS3Helper s3 = new S3Helper(ingestSourceDetail.getS3HelperRequest());
             S3HelperResponse s3HelperResponse = s3.saveFileLocally();
             if (s3HelperResponse.getHasError()) {
@@ -255,9 +256,22 @@ public class processS3Event implements RequestHandler<S3Event, Object> {
     }
 
     protected static PreparedStatement getTableSchemaDefinition(String tableName) throws SQLException {
-        return dbConnection.prepareStatement(String.format("select column_name,data_type,ordinal_position,numeric_precision from information_schema.columns where table_name = '%s' order by ordinal_position;", tableName));
+        return dbConnection.prepareStatement(String.format("select column_name,data_type,ordinal_position,numeric_precision from information_schema.columns where table_name = '%s' and column_name <> 'internal_stage_id' order by ordinal_position;", tableName));
 
     }
+
+    public static String getColumnNameString(IngestSourceDetail ingestSourceDetail) throws SQLException {
+        String[] stageTableNameList = ingestSourceDetail.getStageTableName().split("\\.");
+        String stageTableName = stageTableNameList[stageTableNameList.length - 1];
+        List<String> columnNameList = new ArrayList<>();
+        PreparedStatement ps = dbConnection.prepareStatement(String.format("select column_name,data_type,ordinal_position,numeric_precision from information_schema.columns where table_name = '%s' and column_name <> 'internal_stage_id' order by ordinal_position;", stageTableName));
+        ResultSet rs = ps.executeQuery();
+        while (rs.next()) {
+            columnNameList.add(rs.getString("column_name"));
+        }
+        return String.join(",", columnNameList);
+    }
+
 
     protected static String getParamQueryStringBySource(Integer columnCount) {
         String[] paramList = new String[columnCount];
